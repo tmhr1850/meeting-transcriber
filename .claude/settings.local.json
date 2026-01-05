@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:tactiq.io)",
+      "Bash(git -C /Users/hoshinotomohiro/Desktop/explaza/社内プロジェクト/meeting-transcriber status)",
+      "Bash(git -C /Users/hoshinotomohiro/Desktop/explaza/社内プロジェクト/meeting-transcriber log --oneline)",
+      "Bash(tree:*)",
+      "Bash(git -C /Users/hoshinotomohiro/Desktop/explaza/社内プロジェクト/meeting-transcriber remote -v)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
