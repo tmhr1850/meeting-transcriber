@@ -53,7 +53,7 @@ export class WavEncoder {
     const arrayBuffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(arrayBuffer);
 
-    // Write WAV header
+    // WAVヘッダーを書き込む
     this.writeString(view, 0, 'RIFF');
     view.setUint32(4, 36 + dataSize, true);
     this.writeString(view, 8, 'WAVE');
@@ -68,12 +68,12 @@ export class WavEncoder {
     this.writeString(view, 36, 'data');
     view.setUint32(40, dataSize, true);
 
-    // Write audio data (convert float32 to int16)
+    // 音声データを書き込む（float32からint16へ変換）
     let offset = 44;
     for (let i = 0; i < samples; i++) {
-      // Clamp sample to [-1, 1] range
+      // サンプル値を[-1, 1]の範囲にクランプ
       const sample = Math.max(-1, Math.min(1, buffer[i]));
-      // Convert to 16-bit PCM
+      // 16-bit PCMに変換
       view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
       offset += 2;
     }

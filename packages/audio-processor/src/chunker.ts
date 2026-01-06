@@ -97,20 +97,28 @@ export class AudioChunker {
           this.processChunks();
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
-          console.error('チャンク処理エラー:', err);
-          this.options.onError?.(err);
+          if (this.options.onError) {
+            this.options.onError(err);
+          } else {
+            // onErrorコールバックが未設定の場合のみコンソールに出力
+            console.error('チャンク処理エラー:', err);
+          }
         }
       }
     };
 
     this.mediaRecorder.onerror = (event) => {
       const error = new Error(`MediaRecorder エラー: ${event.type}`);
-      console.error(error);
-      this.options.onError?.(error);
+      if (this.options.onError) {
+        this.options.onError(error);
+      } else {
+        // onErrorコールバックが未設定の場合のみコンソールに出力
+        console.error(error);
+      }
       this.stop(); // エラー時はリソースをクリーンアップ
     };
 
-    // Record in 1-second intervals to enable frequent chunk processing
+    // 頻繁なチャンク処理を可能にするため、1秒間隔で録音
     this.mediaRecorder.start(1000);
   }
 
