@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: [],
+  transpilePackages: ['@meeting-transcriber/shared'],
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
