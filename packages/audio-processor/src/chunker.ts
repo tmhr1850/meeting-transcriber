@@ -6,7 +6,11 @@ import { AUDIO_CONFIG } from '@meeting-transcriber/shared';
 export interface ChunkerOptions {
   /** 各音声チャンクの長さ（ミリ秒、デフォルト: 5000ms） */
   chunkDuration?: number;
-  /** 音声キャプチャのサンプルレート（デフォルト: 16000Hz） */
+  /**
+   * 音声キャプチャのサンプルレート（デフォルト: 16000Hz）
+   * 注意: このパラメータは情報提供のみで、MediaRecorderはストリームのネイティブサンプルレートを使用します
+   * サンプルレート変換が必要な場合は、別途リサンプリング処理を実装してください
+   */
   sampleRate?: number;
   /** 処理前の最小チャンクサイズ（バイト、デフォルト: 1024バイト） */
   minChunkSize?: number;
@@ -68,11 +72,16 @@ export class AudioChunker {
   }
 
   /**
-   * Start capturing and chunking audio from the provided MediaStream
-   * @param stream - MediaStream to capture audio from
-   * @throws Error if no supported audio MIME type is found
+   * 提供されたMediaStreamから音声のキャプチャとチャンク化を開始
+   * @param stream - キャプチャする音声のMediaStream
+   * @throws サポートされている音声MIMEタイプが見つからない場合
+   * @throws 録音が既に開始されている場合
    */
   async start(stream: MediaStream): Promise<void> {
+    if (this.isRecording()) {
+      throw new Error('録音は既に開始されています。stop()を呼び出してから再度start()してください。');
+    }
+
     this.startTime = Date.now();
     this.lastChunkTime = this.startTime;
     this.chunks = [];
@@ -150,8 +159,10 @@ export class AudioChunker {
       this.options.onChunk(combinedBlob, timestamp);
 
       // コンテキスト継続性のためオーバーラップチャンクを保持
-      // MediaRecorderは1秒ごとにチャンクを生成するため、
-      // オーバーラップ時間（ミリ秒）を秒に変換してチャンク数を計算
+      // MediaRecorderはstart(1000)で1秒ごとにチャンクを生成
+      // 注意: 実際のチャンクサイズは可変であり、正確なオーバーラップ時間は保証されません
+      // 500msのオーバーラップ指定では、実際には最大1秒分（1チャンク）を保持
+      // minChunkSize未満のチャンクはスキップされるため、計算が不正確になる可能性があります
       const overlapChunks = Math.ceil(this.options.overlapDuration / 1000);
       this.chunks = this.chunks.slice(-overlapChunks);
       this.lastChunkTime = now;
@@ -187,6 +198,12 @@ export class AudioChunker {
               track.stop();
             }
           });
+        }
+        // メモリリーク防止: イベントハンドラをクリーンアップ
+        if (this.mediaRecorder) {
+          this.mediaRecorder.onstop = null;
+          this.mediaRecorder.ondataavailable = null;
+          this.mediaRecorder.onerror = null;
         }
         this.mediaRecorder = null;
       };

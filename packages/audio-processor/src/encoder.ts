@@ -38,6 +38,18 @@ export class WavEncoder {
     const buffer = this.downmixToMono(audioBuffer);
     const samples = buffer.length;
     const dataSize = samples * blockAlign;
+
+    // WAVファイルは4GB制限あり（約6.7時間 @ 16kHz mono 16-bit）
+    // RIFFチャンクサイズフィールドが32bit unsigned intのため
+    const MAX_WAV_SIZE = 0xFFFFFFFF - 44; // 4GB - ヘッダーサイズ
+    if (dataSize > MAX_WAV_SIZE) {
+      throw new Error(
+        '音声データが大きすぎます。WAV形式の4GB制限を超えています。' +
+        `（最大: 約${Math.floor(MAX_WAV_SIZE / sampleRate / bytesPerSample / 60)}分、` +
+        `現在: 約${Math.floor(dataSize / sampleRate / bytesPerSample / 60)}分）`
+      );
+    }
+
     const arrayBuffer = new ArrayBuffer(44 + dataSize);
     const view = new DataView(arrayBuffer);
 

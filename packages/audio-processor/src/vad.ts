@@ -73,7 +73,7 @@ export class VoiceActivityDetector {
     // TypeScript lib.dom.d.tsの型定義問題により型エラーが発生
     // Uint8Array<ArrayBufferLike>とUint8Array<ArrayBuffer>の不一致
     // 実行時には問題なく動作するため、型チェックを抑制
-    // @ts-expect-error TS2345
+    // @ts-ignore TypeScript lib.dom.d.ts の型定義不一致（実行時には問題なし）
     this.analyser.getByteFrequencyData(this.dataArray);
 
     // パフォーマンス最適化: Array.from()を使わずに直接計算
@@ -99,7 +99,7 @@ export class VoiceActivityDetector {
   getAverageVolume(): number {
     // TypeScript lib.dom.d.tsの型定義問題により型エラーが発生
     // 実行時には問題なく動作するため、型チェックを抑制
-    // @ts-expect-error TS2345
+    // @ts-ignore TypeScript lib.dom.d.ts の型定義不一致（実行時には問題なし）
     this.analyser.getByteFrequencyData(this.dataArray);
 
     // パフォーマンス最適化: Array.from()を使わずに直接計算
