@@ -130,34 +130,34 @@ export class ApiClient {
     }
   }
 
-  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+  async get<T>(endpoint: string, requireAuth: boolean = false): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'GET',
-      headers: await this.getHeaders(),
+      headers: await this.getHeaders(requireAuth),
     });
   }
 
-  async post<T>(endpoint: string, body: unknown): Promise<ApiResponse<T>> {
+  async post<T>(endpoint: string, body: unknown, requireAuth: boolean = false): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',
-      headers: await this.getHeaders(),
+      headers: await this.getHeaders(requireAuth),
       body: JSON.stringify(body),
     });
   }
 
-  async postFormData<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+  async postFormData<T>(endpoint: string, formData: FormData, requireAuth: boolean = false): Promise<ApiResponse<T>> {
     // FormDataの場合はContent-Typeを指定しない（ブラウザが自動設定）
     return this.request<T>(endpoint, {
       method: 'POST',
-      headers: await this.getHeaders(false, false),
+      headers: await this.getHeaders(requireAuth, false),
       body: formData,
     });
   }
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+  async delete<T>(endpoint: string, requireAuth: boolean = false): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'DELETE',
-      headers: await this.getHeaders(),
+      headers: await this.getHeaders(requireAuth),
     });
   }
 }

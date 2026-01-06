@@ -14,7 +14,8 @@ export const transcriptionApi = {
 
     return ApiClient.getInstance().postFormData<TranscriptionResponse>(
       '/transcription',
-      formData
+      formData,
+      true
     );
   },
 };
