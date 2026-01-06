@@ -9,7 +9,9 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
+import Image from 'next/image';
 import type { Session } from 'next-auth';
+import { LogOut, User, Settings } from 'lucide-react';
 
 interface UserMenuProps {
   session: Session;
@@ -50,19 +52,21 @@ export function UserMenu({ session }: UserMenuProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-3 rounded-full bg-white p-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+        className="flex items-center space-x-3 rounded-full bg-white p-1 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
         {session.user.image ? (
-          <img
-            className="h-8 w-8 rounded-full"
+          <Image
             src={session.user.image}
             alt={session.user.name || 'ユーザーアバター'}
+            width={32}
+            height={32}
+            className="rounded-full"
           />
         ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-white">
-            {session.user.name?.charAt(0).toUpperCase() || 'U'}
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100">
+            <User className="h-5 w-5 text-purple-600" />
           </div>
         )}
       </button>
@@ -85,17 +89,11 @@ export function UserMenu({ session }: UserMenuProps) {
           <div className="border-t border-gray-100">
             <a
               href="/settings"
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               role="menuitem"
             >
+              <Settings className="h-4 w-4" />
               設定
-            </a>
-            <a
-              href="/dashboard"
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-              role="menuitem"
-            >
-              ダッシュボード
             </a>
             <a
               href="/meetings"
@@ -109,9 +107,10 @@ export function UserMenu({ session }: UserMenuProps) {
           <div className="border-t border-gray-100">
             <button
               onClick={handleSignOut}
-              className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
               role="menuitem"
             >
+              <LogOut className="h-4 w-4" />
               ログアウト
             </button>
           </div>
