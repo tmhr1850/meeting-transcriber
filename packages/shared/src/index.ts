@@ -6,4 +6,5 @@ export * from './types/api';
 
 // Constants
 export * from './constants/platforms';
+export * from './constants/meeting';
 export * from './constants/audio';
