@@ -76,7 +76,9 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
     });
 
     audioChunker.start(mediaStream);
-    console.log('Recording started for meeting:', meetingInfo);
+    if (import.meta.env.DEV) {
+      console.log('Recording started for meeting:', meetingInfo);
+    }
   } catch (error) {
     // エラー時はリソースをクリーンアップ
     if (mediaStream) {
@@ -85,7 +87,9 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
     }
     audioChunker = null;
     currentMeetingInfo = null;
-    console.error('Failed to start recording:', error);
+    if (import.meta.env.DEV) {
+      console.error('Failed to start recording:', error);
+    }
     throw error;
   }
 }
@@ -95,12 +99,16 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
  */
 async function sendAudioChunk(audioBlob: Blob, timestamp: number): Promise<void> {
   if (!currentMeetingInfo) {
-    console.error('No meeting info available');
+    if (import.meta.env.DEV) {
+      console.error('No meeting info available');
+    }
     return;
   }
 
   try {
-    console.log('Sending audio chunk:', audioBlob.size, 'bytes, timestamp:', timestamp);
+    if (import.meta.env.DEV) {
+      console.log('Sending audio chunk:', audioBlob.size, 'bytes, timestamp:', timestamp);
+    }
 
     // FormDataを作成
     const formData = new FormData();
@@ -119,10 +127,14 @@ async function sendAudioChunk(audioBlob: Blob, timestamp: number): Promise<void>
         data: response.data,
       } as ExtensionMessage);
     } else {
-      console.error('Failed to upload chunk:', response.error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to upload chunk:', response.error);
+      }
     }
   } catch (error) {
-    console.error('Error sending audio chunk:', error);
+    if (import.meta.env.DEV) {
+      console.error('Error sending audio chunk:', error);
+    }
     // エラーがあってもチャンク送信は継続
   }
 }
@@ -144,9 +156,13 @@ async function stopRecording(): Promise<void> {
 
     currentMeetingInfo = null;
 
-    console.log('Recording stopped');
+    if (import.meta.env.DEV) {
+      console.log('Recording stopped');
+    }
   } catch (error) {
-    console.error('Failed to stop recording:', error);
+    if (import.meta.env.DEV) {
+      console.error('Failed to stop recording:', error);
+    }
     // エラーがあってもリソースはクリーンアップする
     audioChunker = null;
     if (mediaStream) {
@@ -158,4 +174,6 @@ async function stopRecording(): Promise<void> {
   }
 }
 
-console.log('Offscreen Audio Recorder initialized');
+if (import.meta.env.DEV) {
+  console.log('Offscreen Audio Recorder initialized');
+}

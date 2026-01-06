@@ -13,50 +13,71 @@ export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     // エラーハンドリング付きでステータス取得
     const fetchStatus = async () => {
       try {
         const response = await chrome.runtime.sendMessage({
           type: 'GET_STATUS',
         } as ExtensionMessage);
-        if (response) {
+        if (response && isMounted) {
           setStatus(response);
         }
       } catch (err) {
-        console.error('Failed to get status:', err);
-        setError('ステータスの取得に失敗しました');
+        if (import.meta.env.DEV) {
+          console.error('Failed to get status:', err);
+        }
+        if (isMounted) {
+          setError('ステータスの取得に失敗しました');
+        }
       }
     };
 
     // 認証状態を確認
     chrome.storage.local.get('authToken', (result) => {
-      setIsAuthenticated(!!result.authToken);
+      if (isMounted) {
+        setIsAuthenticated(!!result.authToken);
+      }
     });
 
     // 現在のタブを確認（エラーハンドリング付き）
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (chrome.runtime.lastError) {
-        console.error('Failed to query tabs:', chrome.runtime.lastError);
-        setError('タブ情報の取得に失敗しました');
+        if (import.meta.env.DEV) {
+          console.error('Failed to query tabs:', chrome.runtime.lastError);
+        }
+        if (isMounted) {
+          setError('タブ情報の取得に失敗しました');
+        }
         return;
       }
       const url = tabs[0]?.url || '';
-      setIsOnMeetingPage(
-        url.includes('meet.google.com') ||
-          url.includes('zoom.us') ||
-          url.includes('teams.microsoft.com') ||
-          url.includes('teams.live.com')
-      );
+      if (isMounted) {
+        setIsOnMeetingPage(
+          url.includes('meet.google.com') ||
+            url.includes('zoom.us') ||
+            url.includes('teams.microsoft.com') ||
+            url.includes('teams.live.com')
+        );
+      }
     });
 
     fetchStatus();
+
+    // クリーンアップ関数
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const openDashboard = () => {
     try {
       chrome.tabs.create({ url: import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000' });
     } catch (err) {
-      console.error('Failed to open dashboard:', err);
+      if (import.meta.env.DEV) {
+        console.error('Failed to open dashboard:', err);
+      }
       setError('ダッシュボードを開けませんでした');
     }
   };

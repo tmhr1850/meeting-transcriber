@@ -8,11 +8,11 @@ export default defineManifest({
   description: 'AI-powered meeting transcription for Google Meet, Zoom, and Teams',
 
   permissions: [
-    'storage',
-    'tabs',
-    'tabCapture',
-    'offscreen',
-    'sidePanel',
+    'storage', // chrome.storage.local/sessionでの状態管理に必要
+    'tabs', // chrome.tabs.sendMessageとchrome.tabs.queryに必要（activeTabでは不十分）
+    'tabCapture', // タブの音声キャプチャに必要
+    'offscreen', // Offscreen Documentでの音声処理に必要
+    'sidePanel', // Side Panelの表示に必要
   ],
 
   host_permissions: [

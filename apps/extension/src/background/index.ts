@@ -7,13 +7,35 @@ import type {
   TranscriptUpdateData,
 } from '@meeting-transcriber/shared';
 
-// 録音状態管理
-let state: RecordingState = {
+/**
+ * 録音状態管理のキー
+ */
+const RECORDING_STATE_KEY = 'recordingState';
+
+/**
+ * 初期状態
+ */
+const INITIAL_STATE: RecordingState = {
   isRecording: false,
   currentMeetingId: null,
   currentTabId: null,
   startTime: null,
 };
+
+/**
+ * 状態を取得（chrome.storage.sessionから）
+ */
+async function getState(): Promise<RecordingState> {
+  const result = await chrome.storage.session.get(RECORDING_STATE_KEY);
+  return result[RECORDING_STATE_KEY] || INITIAL_STATE;
+}
+
+/**
+ * 状態を保存（chrome.storage.sessionに）
+ */
+async function setState(state: RecordingState): Promise<void> {
+  await chrome.storage.session.set({ [RECORDING_STATE_KEY]: state });
+}
 
 // API Client初期化
 ApiClient.initialize({
@@ -29,7 +51,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   handleMessage(message, sender)
     .then(sendResponse)
     .catch((error) => {
-      console.error('Message handling error:', error);
+      if (import.meta.env.DEV) {
+        console.error('Message handling error:', error);
+      }
       sendResponse({ success: false, error: String(error) });
     });
   return true; // 非同期レスポンスのため
@@ -47,7 +71,7 @@ async function handleMessage(
       return await stopRecording();
 
     case 'GET_STATUS':
-      return state;
+      return await getState();
 
     case 'TRANSCRIPT_RECEIVED':
       return await handleTranscriptReceived(message.data);
@@ -63,6 +87,8 @@ async function handleMessage(
 async function handleTranscriptReceived(
   data: TranscriptUpdateData
 ): Promise<{ success: boolean }> {
+  const state = await getState();
+
   // 録音中のタブにのみ送信
   if (state.currentTabId) {
     try {
@@ -72,7 +98,9 @@ async function handleTranscriptReceived(
       } as ExtensionMessage);
       return { success: true };
     } catch (error) {
-      console.error('Failed to send transcript to content script:', error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to send transcript to content script:', error);
+      }
       return { success: false };
     }
   }
@@ -90,7 +118,9 @@ async function startRecording(
     return { success: false, error: 'No tab ID provided' };
   }
 
-  if (state.isRecording) {
+  const currentState = await getState();
+
+  if (currentState.isRecording) {
     return { success: false, error: 'Already recording' };
   }
 
@@ -125,31 +155,37 @@ async function startRecording(
       data: { streamId, meetingInfo },
     } as ExtensionMessage);
 
-    // 状態を更新
-    state = {
+    // 状態を更新（chrome.storage.sessionに保存）
+    await setState({
       isRecording: true,
       currentMeetingId: meetingInfo.meetingId,
       currentTabId: tabId,
       startTime: Date.now(),
-    };
+    });
 
     // アイコン変更（エラーがあってもスキップ）
     try {
       await chrome.action.setIcon({ path: 'icons/icon-recording.png' });
     } catch (iconError) {
-      console.warn('Failed to set recording icon, continuing:', iconError);
+      if (import.meta.env.DEV) {
+        console.warn('Failed to set recording icon, continuing:', iconError);
+      }
     }
 
     // Side Panelを開く
     try {
       await chrome.sidePanel.open({ tabId });
     } catch (panelError) {
-      console.warn('Failed to open side panel, continuing:', panelError);
+      if (import.meta.env.DEV) {
+        console.warn('Failed to open side panel, continuing:', panelError);
+      }
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Start recording error:', error);
+    if (import.meta.env.DEV) {
+      console.error('Start recording error:', error);
+    }
     return { success: false, error: String(error) };
   }
 }
@@ -158,7 +194,9 @@ async function startRecording(
  * 録音を停止
  */
 async function stopRecording(): Promise<{ success: boolean }> {
-  if (!state.isRecording) {
+  const currentState = await getState();
+
+  if (!currentState.isRecording) {
     return { success: true }; // 既に停止している場合は成功として扱う
   }
 
@@ -173,34 +211,30 @@ async function stopRecording(): Promise<{ success: boolean }> {
     try {
       await chrome.offscreen.closeDocument();
     } catch (closeError) {
-      console.warn('Failed to close offscreen document, continuing:', closeError);
+      if (import.meta.env.DEV) {
+        console.warn('Failed to close offscreen document, continuing:', closeError);
+      }
     }
 
-    // 状態をリセット
-    state = {
-      isRecording: false,
-      currentMeetingId: null,
-      currentTabId: null,
-      startTime: null,
-    };
+    // 状態をリセット（chrome.storage.sessionに保存）
+    await setState(INITIAL_STATE);
 
     // アイコンを元に戻す（エラーがあってもスキップ）
     try {
       await chrome.action.setIcon({ path: 'icons/icon-128.png' });
     } catch (iconError) {
-      console.warn('Failed to reset icon, continuing:', iconError);
+      if (import.meta.env.DEV) {
+        console.warn('Failed to reset icon, continuing:', iconError);
+      }
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Stop recording error:', error);
+    if (import.meta.env.DEV) {
+      console.error('Stop recording error:', error);
+    }
     // エラーがあっても状態はリセットする
-    state = {
-      isRecording: false,
-      currentMeetingId: null,
-      currentTabId: null,
-      startTime: null,
-    };
+    await setState(INITIAL_STATE);
     return { success: true };
   }
 }

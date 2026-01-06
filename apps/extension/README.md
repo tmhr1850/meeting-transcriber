@@ -136,9 +136,80 @@ pnpm build
 - [ ] Popup UI完全実装 (Issue #15)
 - [ ] 音声チャンク送信・API連携 (Issue #17)
 
+## セキュリティ考慮事項
+
+### 認証トークンの管理
+
+拡張機能では、ユーザーの認証トークンを安全に管理する必要があります。
+
+#### トークンストレージ
+
+- **保存場所**: `chrome.storage.local`を使用
+- **暗号化**: Chrome拡張のストレージは、OSレベルの暗号化で保護されます
+  - Windows: DPAPI (Data Protection API)
+  - macOS: Keychain
+  - Linux: gnome-keyring / kwallet
+- **アクセス制限**: 同じ拡張機能IDのみがアクセス可能
+
+#### トークンの取り扱い
+
+```typescript
+// 認証トークンの保存
+await chrome.storage.local.set({ authToken: token });
+
+// 認証トークンの取得
+const result = await chrome.storage.local.get('authToken');
+const token = result.authToken;
+
+// 認証トークンの削除（ログアウト時）
+await chrome.storage.local.remove('authToken');
+```
+
+#### セキュリティベストプラクティス
+
+1. **トークンのライフサイクル管理**
+   - トークンの有効期限を確認
+   - 期限切れトークンの自動削除
+   - リフレッシュトークンの実装
+
+2. **Content Scriptへのトークン露出を避ける**
+   - Content Scriptは信頼できないページコンテキストで実行される
+   - Background Service Workerでトークンを管理
+   - Content ScriptはBackground経由でAPIリクエスト
+
+3. **通信の暗号化**
+   - APIとの通信は必ずHTTPS使用
+   - `VITE_API_URL`は本番環境では必ずHTTPSを指定
+
+4. **パーミッションの最小化**
+   - 必要最小限のパーミッションのみ使用
+   - `host_permissions`は特定のドメインに限定
+
+5. **音声データの取り扱い**
+   - 録音した音声データは処理後速やかに削除
+   - ローカルストレージに音声データを保存しない
+   - APIへの送信はHTTPS経由のみ
+
+### Content Security Policy (CSP)
+
+Manifest V3では、デフォルトで厳格なCSPが適用されます:
+
+```
+script-src 'self';
+object-src 'self';
+```
+
+これにより、インラインスクリプトやeval()の使用が制限され、XSS攻撃のリスクが軽減されます。
+
+### 外部リソースの検証
+
+- `web_accessible_resources`は必要最小限に限定
+- 信頼できないサードパーティスクリプトの読み込みを避ける
+
 ## 参考リンク
 
 - [Chrome Extension Manifest V3](https://developer.chrome.com/docs/extensions/mv3/)
 - [tabCapture API](https://developer.chrome.com/docs/extensions/reference/tabCapture/)
 - [Offscreen Documents](https://developer.chrome.com/docs/extensions/reference/offscreen/)
 - [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin/)
+- [Chrome Extension Security](https://developer.chrome.com/docs/extensions/mv3/security/)

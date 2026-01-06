@@ -5,12 +5,16 @@
 
 import type { ExtensionMessage, MeetingInfo } from '@meeting-transcriber/shared';
 
-console.log('Meeting Transcriber: Google Meet Content Script loaded');
+if (import.meta.env.DEV) {
+  console.log('Meeting Transcriber: Google Meet Content Script loaded');
+}
 
 // Background Scriptからのメッセージを受信
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
   if (message.type === 'TRANSCRIPT_UPDATE') {
-    console.log('Transcript update received:', message.data);
+    if (import.meta.env.DEV) {
+      console.log('Transcript update received:', message.data);
+    }
     // TODO: UIに文字起こし結果を表示（Issue #14で実装予定）
   }
   sendResponse({ success: true });
@@ -45,12 +49,18 @@ async function startRecording(): Promise<void> {
     } as ExtensionMessage);
 
     if (response?.success) {
-      console.log('Recording started');
+      if (import.meta.env.DEV) {
+        console.log('Recording started');
+      }
     } else {
-      console.error('Failed to start recording:', response?.error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to start recording:', response?.error);
+      }
     }
   } catch (error) {
-    console.error('Error starting recording:', error);
+    if (import.meta.env.DEV) {
+      console.error('Error starting recording:', error);
+    }
   }
 }
 
@@ -64,22 +74,30 @@ async function stopRecording(): Promise<void> {
     } as ExtensionMessage);
 
     if (response?.success) {
-      console.log('Recording stopped');
+      if (import.meta.env.DEV) {
+        console.log('Recording stopped');
+      }
     } else {
-      console.error('Failed to stop recording:', response?.error);
+      if (import.meta.env.DEV) {
+        console.error('Failed to stop recording:', response?.error);
+      }
     }
   } catch (error) {
-    console.error('Error stopping recording:', error);
+    if (import.meta.env.DEV) {
+      console.error('Error stopping recording:', error);
+    }
   }
 }
 
-// 関数を公開（開発用）
-// @ts-ignore
-window.__meetingTranscriber = {
-  startRecording,
-  stopRecording,
-  getMeetingInfo,
-};
+// 関数を公開（開発用のみ）
+if (import.meta.env.DEV) {
+  // @ts-ignore
+  window.__meetingTranscriber = {
+    startRecording,
+    stopRecording,
+    getMeetingInfo,
+  };
+}
 
 // TODO: 録音ボタンUIの挿入
 // TODO: 文字起こし結果の表示UI
