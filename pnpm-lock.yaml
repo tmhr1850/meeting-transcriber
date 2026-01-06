@@ -24,6 +24,32 @@ importers:
         specifier: ^5.3.0
         version: 5.9.3
 
+  packages/api-client:
+    dependencies:
+      '@meeting-transcriber/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
+  packages/audio-processor:
+    dependencies:
+      '@meeting-transcriber/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
+  packages/shared:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
 packages:
 
   '@eslint-community/eslint-utils@4.9.1':
