@@ -5,7 +5,12 @@
 
 import { AudioChunker } from '@meeting-transcriber/audio-processor';
 import { ApiClient } from '@meeting-transcriber/api-client';
-import type { ExtensionMessage, MeetingInfo } from '@meeting-transcriber/shared';
+import type {
+  ExtensionMessage,
+  MeetingInfo,
+  TranscriptUpdateData,
+} from '@meeting-transcriber/shared';
+import { logger, createMessage, getRequiredEnv } from '@meeting-transcriber/shared';
 // Chrome拡張のtabCapture用型定義は chrome-media.d.ts で定義済み
 
 let audioChunker: AudioChunker | null = null;
@@ -14,7 +19,7 @@ let currentMeetingInfo: MeetingInfo | null = null;
 
 // API Client初期化
 ApiClient.initialize({
-  baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+  baseUrl: getRequiredEnv('VITE_API_URL', 'http://localhost:3000/api'),
   getAuthToken: async () => {
     const result = await chrome.storage.local.get('authToken');
     return result.authToken || null;
@@ -71,14 +76,12 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
         await sendAudioChunk(audioBlob, timestamp);
       },
       onError: (error: Error) => {
-        console.error('Audio chunking error:', error);
+        logger.error('Audio chunking error:', error);
       },
     });
 
     audioChunker.start(mediaStream);
-    if (import.meta.env.DEV) {
-      console.log('Recording started for meeting:', meetingInfo);
-    }
+    logger.debug('Recording started for meeting:', meetingInfo);
   } catch (error) {
     // エラー時はリソースをクリーンアップ
     if (mediaStream) {
@@ -87,9 +90,7 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
     }
     audioChunker = null;
     currentMeetingInfo = null;
-    if (import.meta.env.DEV) {
-      console.error('Failed to start recording:', error);
-    }
+    logger.error('Failed to start recording:', error);
     throw error;
   }
 }
@@ -99,16 +100,12 @@ async function startRecording(streamId: string, meetingInfo: MeetingInfo): Promi
  */
 async function sendAudioChunk(audioBlob: Blob, timestamp: number): Promise<void> {
   if (!currentMeetingInfo) {
-    if (import.meta.env.DEV) {
-      console.error('No meeting info available');
-    }
+    logger.error('No meeting info available');
     return;
   }
 
   try {
-    if (import.meta.env.DEV) {
-      console.log('Sending audio chunk:', audioBlob.size, 'bytes, timestamp:', timestamp);
-    }
+    logger.debug('Sending audio chunk:', audioBlob.size, 'bytes, timestamp:', timestamp);
 
     // FormDataを作成
     const formData = new FormData();
@@ -122,19 +119,14 @@ async function sendAudioChunk(audioBlob: Blob, timestamp: number): Promise<void>
 
     if (response.success && response.data) {
       // Background Scriptに文字起こし結果を送信
-      chrome.runtime.sendMessage({
-        type: 'TRANSCRIPT_RECEIVED',
-        data: response.data,
-      } as ExtensionMessage);
+      // response.dataはTranscriptUpdateData型である必要がある
+      const transcriptData = response.data as TranscriptUpdateData;
+      chrome.runtime.sendMessage(createMessage('TRANSCRIPT_RECEIVED', { data: transcriptData }));
     } else {
-      if (import.meta.env.DEV) {
-        console.error('Failed to upload chunk:', response.error);
-      }
+      logger.error('Failed to upload chunk:', response.error);
     }
   } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error('Error sending audio chunk:', error);
-    }
+    logger.error('Error sending audio chunk:', error);
     // エラーがあってもチャンク送信は継続
   }
 }
@@ -156,13 +148,9 @@ async function stopRecording(): Promise<void> {
 
     currentMeetingInfo = null;
 
-    if (import.meta.env.DEV) {
-      console.log('Recording stopped');
-    }
+    logger.debug('Recording stopped');
   } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error('Failed to stop recording:', error);
-    }
+    logger.error('Failed to stop recording:', error);
     // エラーがあってもリソースはクリーンアップする
     audioChunker = null;
     if (mediaStream) {
@@ -174,6 +162,4 @@ async function stopRecording(): Promise<void> {
   }
 }
 
-if (import.meta.env.DEV) {
-  console.log('Offscreen Audio Recorder initialized');
-}
+logger.debug('Offscreen Audio Recorder initialized');
