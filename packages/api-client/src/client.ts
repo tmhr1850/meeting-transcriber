@@ -3,6 +3,8 @@ import type { ApiResponse } from '@meeting-transcriber/shared';
 export interface ClientConfig {
   baseUrl: string;
   getAuthToken?: () => Promise<string | null>;
+  /** リクエストタイムアウト（ミリ秒）。デフォルト: 30000ms (30秒) */
+  timeout?: number;
 }
 
 export class ApiClient {
@@ -15,8 +17,7 @@ export class ApiClient {
 
   static initialize(config: ClientConfig): void {
     if (ApiClient.instance) {
-      console.warn('ApiClient already initialized. Ignoring duplicate initialization.');
-      return;
+      throw new Error('ApiClient already initialized. Call initialize() only once.');
     }
     ApiClient.instance = new ApiClient(config);
   }
@@ -28,11 +29,23 @@ export class ApiClient {
     return ApiClient.instance;
   }
 
-  private async getHeaders(requireAuth: boolean = false): Promise<HeadersInit> {
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
+  /**
+   * HTTPヘッダーを取得
+   * @param requireAuth 認証が必須かどうか
+   * @param includeContentType Content-Typeヘッダーを含めるか（FormDataの場合はfalse）
+   */
+  private async getHeaders(
+    requireAuth: boolean = false,
+    includeContentType: boolean = true
+  ): Promise<HeadersInit> {
+    const headers: HeadersInit = {};
 
+    // Content-Typeヘッダー（FormData以外の場合）
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    // 認証ヘッダー
     if (this.config.getAuthToken) {
       const token = await this.config.getAuthToken();
       if (token) {
@@ -56,9 +69,12 @@ export class ApiClient {
     options: RequestInit
   ): Promise<ApiResponse<T>> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
+      const timeout = this.config.timeout ?? 30000; // デフォルト: 30秒
+      timeoutId = setTimeout(() => controller.abort(), timeout);
+
       const response = await fetch(`${this.config.baseUrl}${endpoint}`, {
         ...options,
         signal: controller.signal,
@@ -107,7 +123,10 @@ export class ApiClient {
         },
       };
     } finally {
-      clearTimeout(timeoutId); // 必ずタイマーをクリア
+      // timeoutIdが設定されている場合のみクリア
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
@@ -128,17 +147,9 @@ export class ApiClient {
 
   async postFormData<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
     // FormDataの場合はContent-Typeを指定しない（ブラウザが自動設定）
-    const headers: HeadersInit = {};
-    if (this.config.getAuthToken) {
-      const token = await this.config.getAuthToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    }
-
     return this.request<T>(endpoint, {
       method: 'POST',
-      headers,
+      headers: await this.getHeaders(false, false),
       body: formData,
     });
   }
