@@ -1,33 +1,41 @@
 /**
- * WavEncoder converts AudioBuffer to WAV format for Whisper API compatibility
+ * WavEncoder - AudioBufferをWAV形式に変換（Whisper API互換）
  *
- * WAV format is widely supported and provides lossless audio encoding,
- * making it ideal for transcription accuracy.
+ * WAV形式は広くサポートされており、ロスレス音声エンコーディングを提供するため、
+ * 文字起こしの精度向上に最適です。
+ *
+ * 注意: このエンコーダーはモノラル出力専用です。ステレオ入力は自動的にダウンミックスされます。
  *
  * @example
  * ```typescript
  * const audioContext = new AudioContext();
  * const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
- * const wavBlob = await WavEncoder.encode(audioBuffer);
- * // Send wavBlob to Whisper API
+ * const wavBlob = WavEncoder.encode(audioBuffer);
+ * // Whisper APIにwavBlobを送信
  * ```
  */
 export class WavEncoder {
+  private static readonly WAV_FORMAT_PCM = 1;
+  private static readonly BIT_DEPTH = 16;
+  private static readonly NUM_CHANNELS = 1; // モノラル専用
+
   /**
-   * Encode an AudioBuffer to WAV format
-   * @param audioBuffer - AudioBuffer to encode
-   * @returns Promise resolving to a Blob containing WAV audio data
+   * AudioBufferをWAV形式にエンコード
+   * ステレオ音声は自動的にモノラルにダウンミックスされます
+   * @param audioBuffer - エンコードするAudioBuffer
+   * @returns WAV音声データを含むBlob
    */
-  static async encode(audioBuffer: AudioBuffer): Promise<Blob> {
-    const numChannels = audioBuffer.numberOfChannels;
+  static encode(audioBuffer: AudioBuffer): Blob {
+    const numChannels = this.NUM_CHANNELS;
     const sampleRate = audioBuffer.sampleRate;
-    const format = 1; // PCM format
-    const bitDepth = 16;
+    const format = this.WAV_FORMAT_PCM;
+    const bitDepth = this.BIT_DEPTH;
 
     const bytesPerSample = bitDepth / 8;
     const blockAlign = numChannels * bytesPerSample;
 
-    const buffer = audioBuffer.getChannelData(0);
+    // ステレオの場合はダウンミックス、モノラルの場合はそのまま使用
+    const buffer = this.downmixToMono(audioBuffer);
     const samples = buffer.length;
     const dataSize = samples * blockAlign;
     const arrayBuffer = new ArrayBuffer(44 + dataSize);
@@ -62,10 +70,40 @@ export class WavEncoder {
   }
 
   /**
-   * Write a string to a DataView at the specified offset
-   * @param view - DataView to write to
-   * @param offset - Byte offset to start writing
-   * @param string - String to write
+   * ステレオ音声をモノラルにダウンミックス
+   * 複数チャンネルの場合は全チャンネルの平均を取る
+   * @param audioBuffer - ダウンミックスするAudioBuffer
+   * @returns モノラル音声データ（Float32Array）
+   * @private
+   */
+  private static downmixToMono(audioBuffer: AudioBuffer): Float32Array {
+    const numChannels = audioBuffer.numberOfChannels;
+
+    // 既にモノラルの場合はそのまま返す
+    if (numChannels === 1) {
+      return audioBuffer.getChannelData(0);
+    }
+
+    // 複数チャンネルの場合は平均を取る
+    const length = audioBuffer.length;
+    const monoBuffer = new Float32Array(length);
+
+    for (let i = 0; i < length; i++) {
+      let sum = 0;
+      for (let channel = 0; channel < numChannels; channel++) {
+        sum += audioBuffer.getChannelData(channel)[i];
+      }
+      monoBuffer[i] = sum / numChannels;
+    }
+
+    return monoBuffer;
+  }
+
+  /**
+   * DataViewの指定オフセットに文字列を書き込む
+   * @param view - 書き込み先のDataView
+   * @param offset - 書き込み開始バイトオフセット
+   * @param string - 書き込む文字列
    * @private
    */
   private static writeString(view: DataView, offset: number, string: string): void {

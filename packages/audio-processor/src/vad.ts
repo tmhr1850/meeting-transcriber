@@ -1,21 +1,21 @@
 /**
- * Options for configuring Voice Activity Detection
+ * 音声アクティビティ検出（VAD）の設定オプション
  */
 export interface VADOptions {
-  /** Volume threshold for detecting voice activity (0-255, default: 30) */
+  /** 音声アクティビティ検出の音量閾値（0-255、デフォルト: 30） */
   threshold?: number;
-  /** Milliseconds of silence before considering voice inactive (default: 2000ms) */
+  /** 音声が非アクティブと判定するまでの無音時間（ミリ秒、デフォルト: 2000ms） */
   silenceTimeout?: number;
 }
 
 /**
- * VoiceActivityDetector analyzes audio stream to detect when someone is speaking
+ * VoiceActivityDetector - 音声ストリームを分析して話者の発話を検出
  *
- * Uses frequency analysis to determine if voice is present in the audio stream.
- * Useful for:
- * - Pausing transcription during silence
- * - Optimizing API calls to Whisper
- * - Detecting speaker turns
+ * 周波数分析を使用して音声ストリーム内の音声の有無を判定します。
+ * 用途:
+ * - 無音時の文字起こし一時停止
+ * - Whisper APIへの呼び出しの最適化
+ * - 話者交代の検出
  *
  * @example
  * ```typescript
@@ -27,8 +27,11 @@ export interface VADOptions {
  * });
  *
  * if (vad.isVoiceActive()) {
- *   // Continue recording
+ *   // 録音を継続
  * }
+ *
+ * // 使用後はクリーンアップ
+ * vad.dispose();
  * ```
  */
 export class VoiceActivityDetector {
@@ -39,10 +42,10 @@ export class VoiceActivityDetector {
   private lastVoiceTime: number;
 
   /**
-   * Create a new VoiceActivityDetector
+   * 新しいVoiceActivityDetectorを作成
    * @param audioContext - Web Audio API AudioContext
-   * @param source - MediaStreamAudioSourceNode to analyze
-   * @param options - Configuration options
+   * @param source - 分析対象のMediaStreamAudioSourceNode
+   * @param options - 設定オプション
    */
   constructor(
     audioContext: AudioContext,
@@ -53,64 +56,89 @@ export class VoiceActivityDetector {
     this.silenceTimeout = options.silenceTimeout ?? 2000;
     this.lastVoiceTime = Date.now();
 
-    // Create analyser node for frequency analysis
+    // 周波数分析用のアナライザーノードを作成
     this.analyser = audioContext.createAnalyser();
     this.analyser.fftSize = 256;
     this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
-    // Connect source to analyser
+    // ソースをアナライザーに接続
     source.connect(this.analyser);
   }
 
   /**
-   * Check if voice activity is currently detected
-   * @returns true if voice is active or was recently active within silence timeout
+   * 音声アクティビティが現在検出されているかチェック
+   * @returns 音声がアクティブまたは無音タイムアウト内で最近アクティブだった場合true
    */
   isVoiceActive(): boolean {
-    // @ts-expect-error - TypeScript lib definition issue with Uint8Array<ArrayBufferLike>
+    // TypeScript lib.dom.d.tsの型定義問題により型エラーが発生
+    // Uint8Array<ArrayBufferLike>とUint8Array<ArrayBuffer>の不一致
+    // 実行時には問題なく動作するため、型チェックを抑制
+    // @ts-expect-error TS2345
     this.analyser.getByteFrequencyData(this.dataArray);
-    const average = Array.from(this.dataArray).reduce((a, b) => a + b, 0) / this.dataArray.length;
+
+    // パフォーマンス最適化: Array.from()を使わずに直接計算
+    let sum = 0;
+    for (let i = 0; i < this.dataArray.length; i++) {
+      sum += this.dataArray[i];
+    }
+    const average = sum / this.dataArray.length;
 
     if (average > this.threshold) {
       this.lastVoiceTime = Date.now();
       return true;
     }
 
-    // Continue considering voice active during silence timeout period
+    // 無音タイムアウト期間中は音声アクティブと見なす
     return Date.now() - this.lastVoiceTime < this.silenceTimeout;
   }
 
   /**
-   * Get the current average volume level
-   * @returns Average volume (0-255)
+   * 現在の平均音量レベルを取得
+   * @returns 平均音量（0-255）
    */
   getAverageVolume(): number {
-    // @ts-expect-error - TypeScript lib definition issue with Uint8Array<ArrayBufferLike>
+    // TypeScript lib.dom.d.tsの型定義問題により型エラーが発生
+    // 実行時には問題なく動作するため、型チェックを抑制
+    // @ts-expect-error TS2345
     this.analyser.getByteFrequencyData(this.dataArray);
-    return Array.from(this.dataArray).reduce((a, b) => a + b, 0) / this.dataArray.length;
+
+    // パフォーマンス最適化: Array.from()を使わずに直接計算
+    let sum = 0;
+    for (let i = 0; i < this.dataArray.length; i++) {
+      sum += this.dataArray[i];
+    }
+    return sum / this.dataArray.length;
   }
 
   /**
-   * Update the voice activity threshold
-   * @param threshold - New threshold value (0-255)
+   * 音声アクティビティ閾値を更新
+   * @param threshold - 新しい閾値（0-255）
    */
   setThreshold(threshold: number): void {
     this.threshold = Math.max(0, Math.min(255, threshold));
   }
 
   /**
-   * Update the silence timeout duration
-   * @param timeout - New timeout in milliseconds
+   * 無音タイムアウト時間を更新
+   * @param timeout - 新しいタイムアウト（ミリ秒）
    */
   setSilenceTimeout(timeout: number): void {
     this.silenceTimeout = Math.max(0, timeout);
   }
 
   /**
-   * Get the time elapsed since last voice activity
-   * @returns Milliseconds since last detected voice
+   * 最後の音声アクティビティからの経過時間を取得
+   * @returns 最後に検出された音声からのミリ秒
    */
   getTimeSinceLastVoice(): number {
     return Date.now() - this.lastVoiceTime;
+  }
+
+  /**
+   * リソースをクリーンアップしてAnalyserNodeを切断
+   * 長時間実行アプリケーションでのメモリリークを防ぐ
+   */
+  dispose(): void {
+    this.analyser.disconnect();
   }
 }
