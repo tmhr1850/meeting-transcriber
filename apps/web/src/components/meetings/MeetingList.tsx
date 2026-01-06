@@ -16,6 +16,15 @@ interface MeetingListProps {
 }
 
 /**
+ * プラットフォーム名のマッピング
+ */
+const PLATFORM_NAMES = {
+  google_meet: 'Google Meet',
+  zoom: 'Zoom',
+  teams: 'Microsoft Teams',
+} as const;
+
+/**
  * 会議一覧コンポーネント
  * 会議のカードリストを表示
  */
@@ -56,9 +65,8 @@ export function MeetingList({ meetings }: MeetingListProps) {
           </div>
 
           <div className="mt-3 inline-flex items-center px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded">
-            {meeting.platform === 'google_meet' && 'Google Meet'}
-            {meeting.platform === 'zoom' && 'Zoom'}
-            {meeting.platform === 'teams' && 'Microsoft Teams'}
+            {PLATFORM_NAMES[meeting.platform as keyof typeof PLATFORM_NAMES] ||
+              meeting.platform}
           </div>
         </Link>
       ))}

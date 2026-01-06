@@ -2,6 +2,7 @@
 
 import { Session } from 'next-auth';
 import { signOut } from 'next-auth/react';
+import Image from 'next/image';
 import { LogOut, User } from 'lucide-react';
 
 interface UserMenuProps {
@@ -17,10 +18,12 @@ export function UserMenu({ user }: UserMenuProps) {
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-2">
         {user.image ? (
-          <img
+          <Image
             src={user.image}
             alt={user.name || ''}
-            className="w-8 h-8 rounded-full"
+            width={32}
+            height={32}
+            className="rounded-full"
           />
         ) : (
           <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">

@@ -14,6 +14,13 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
+
+  // 無効な日付のチェック
+  if (isNaN(d.getTime())) {
+    console.error('Invalid date:', date);
+    return '不明な日付';
+  }
+
   return new Intl.DateTimeFormat('ja-JP', {
     year: 'numeric',
     month: 'long',

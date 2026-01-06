@@ -29,6 +29,9 @@ importers:
       '@auth/prisma-adapter':
         specifier: ^1.0.0
         version: 1.6.0(@prisma/client@5.22.0(prisma@5.22.0))
+      '@meeting-transcriber/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@prisma/client':
         specifier: ^5.10.0
         version: 5.22.0(prisma@5.22.0)
