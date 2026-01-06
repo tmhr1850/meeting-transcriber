@@ -6,12 +6,6 @@ import { AUDIO_CONFIG } from '@meeting-transcriber/shared';
 export interface ChunkerOptions {
   /** 各音声チャンクの長さ（ミリ秒、デフォルト: 5000ms） */
   chunkDuration?: number;
-  /**
-   * 音声キャプチャのサンプルレート（デフォルト: 16000Hz）
-   * 注意: このパラメータは情報提供のみで、MediaRecorderはストリームのネイティブサンプルレートを使用します
-   * サンプルレート変換が必要な場合は、別途リサンプリング処理を実装してください
-   */
-  sampleRate?: number;
   /** 処理前の最小チャンクサイズ（バイト、デフォルト: 1024バイト） */
   minChunkSize?: number;
   /** チャンク間のオーバーラップ時間（デフォルト: 500ms） */
@@ -31,6 +25,10 @@ export interface ChunkerOptions {
  * - Chunks audio into 5-second intervals with overlap
  * - Handles stream lifecycle and cleanup
  *
+ * Important Notes:
+ * - Sample rate control: MediaRecorder APIでは入力ストリームのネイティブサンプルレートが使用されます
+ *   サンプルレート変換が必要な場合は、Web Audio APIを使用した別途リサンプリング処理を実装してください
+ *
  * @example
  * ```typescript
  * const chunker = new AudioChunker({
@@ -40,7 +38,7 @@ export interface ChunkerOptions {
  *   }
  * });
  *
- * await chunker.start(mediaStream);
+ * chunker.start(mediaStream);
  * // ... later
  * chunker.stop();
  * ```
@@ -53,7 +51,6 @@ export class AudioChunker {
   private selectedMimeType: string = '';
   private options: {
     chunkDuration: number;
-    sampleRate: number;
     minChunkSize: number;
     overlapDuration: number;
     onChunk: (blob: Blob, timestamp: number) => void;
@@ -63,7 +60,6 @@ export class AudioChunker {
   constructor(options: ChunkerOptions) {
     this.options = {
       chunkDuration: options.chunkDuration ?? AUDIO_CONFIG.CHUNK_DURATION_MS,
-      sampleRate: options.sampleRate ?? AUDIO_CONFIG.SAMPLE_RATE,
       minChunkSize: options.minChunkSize ?? AUDIO_CONFIG.MIN_CHUNK_SIZE,
       overlapDuration: options.overlapDuration ?? AUDIO_CONFIG.OVERLAP_DURATION_MS,
       onChunk: options.onChunk,
@@ -77,7 +73,7 @@ export class AudioChunker {
    * @throws サポートされている音声MIMEタイプが見つからない場合
    * @throws 録音が既に開始されている場合
    */
-  async start(stream: MediaStream): Promise<void> {
+  start(stream: MediaStream): void {
     if (this.isRecording()) {
       throw new Error('録音は既に開始されています。stop()を呼び出してから再度start()してください。');
     }
@@ -159,10 +155,16 @@ export class AudioChunker {
       this.options.onChunk(combinedBlob, timestamp);
 
       // コンテキスト継続性のためオーバーラップチャンクを保持
-      // MediaRecorderはstart(1000)で1秒ごとにチャンクを生成
-      // 注意: 実際のチャンクサイズは可変であり、正確なオーバーラップ時間は保証されません
-      // 500msのオーバーラップ指定では、実際には最大1秒分（1チャンク）を保持
-      // minChunkSize未満のチャンクはスキップされるため、計算が不正確になる可能性があります
+      //
+      // 重要: このオーバーラップ実装は近似値であり、正確な時間ベースのオーバーラップではありません
+      //
+      // 制約:
+      // - MediaRecorderはstart(1000)で1秒ごとにチャンクを生成しますが、実際のチャンクサイズは可変
+      // - チャンク数ベースでスライスしているため、実際のオーバーラップ時間は指定値とずれる可能性あり
+      // - 例: 500msのオーバーラップ指定でも、実際には0〜1000msの範囲で変動
+      // - minChunkSize未満のチャンクはスキップされるため、さらに不正確になる可能性あり
+      //
+      // より正確なオーバーラップが必要な場合は、タイムスタンプベースの実装に変更が必要です
       const overlapChunks = Math.ceil(this.options.overlapDuration / 1000);
       this.chunks = this.chunks.slice(-overlapChunks);
       this.lastChunkTime = now;
@@ -187,32 +189,30 @@ export class AudioChunker {
    * 残りのチャンクは自動的に出力されます
    */
   stop(): void {
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      // onstopイベントでflush()を呼び出すことで、
-      // MediaRecorderの最後のondataavailableイベントを確実に処理
-      this.mediaRecorder.onstop = () => {
-        this.flush();
-        if (this.mediaRecorder?.stream) {
-          this.mediaRecorder.stream.getTracks().forEach(track => {
-            if (track.readyState !== 'ended') {
-              track.stop();
-            }
-          });
-        }
-        // メモリリーク防止: イベントハンドラをクリーンアップ
-        if (this.mediaRecorder) {
-          this.mediaRecorder.onstop = null;
-          this.mediaRecorder.ondataavailable = null;
-          this.mediaRecorder.onerror = null;
-        }
-        this.mediaRecorder = null;
-      };
-      this.mediaRecorder.stop();
-    } else {
-      // 既に停止している場合は直接クリーンアップ
-      this.flush();
-      this.mediaRecorder = null;
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+      // 既に停止している場合は早期リターン
+      return;
     }
+
+    // 先にrecorderを保存してnullに設定し、再呼び出しを防ぐ
+    const recorder = this.mediaRecorder;
+    this.mediaRecorder = null;
+
+    recorder.onstop = () => {
+      this.flush();
+      if (recorder.stream) {
+        recorder.stream.getTracks().forEach(track => {
+          if (track.readyState !== 'ended') {
+            track.stop();
+          }
+        });
+      }
+      // メモリリーク防止: イベントハンドラをクリーンアップ
+      recorder.onstop = null;
+      recorder.ondataavailable = null;
+      recorder.onerror = null;
+    };
+    recorder.stop();
   }
 
   /**
