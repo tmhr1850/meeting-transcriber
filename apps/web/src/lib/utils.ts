@@ -11,6 +11,7 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * 日付をフォーマットする
+ * タイムゾーンを明示的に指定してハイドレーションエラーを防ぐ
  */
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -27,6 +28,7 @@ export function formatDate(date: Date | string): string {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Asia/Tokyo',
   }).format(d);
 }
 

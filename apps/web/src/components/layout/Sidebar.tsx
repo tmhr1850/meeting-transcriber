@@ -11,11 +11,10 @@ import {
   Archive,
   Upload,
   MessageSquare,
-  FolderOpen,
 } from 'lucide-react';
 
 const menuItems = [
-  { href: '/meetings', label: '検索', icon: Search },
+  { href: '/search', label: '検索', icon: Search },
   { href: '/meetings', label: '私の会議', icon: Calendar },
   { href: '/shared', label: '私と共有', icon: Share2 },
   { href: '/ai-tools', label: 'AIツール', icon: Sparkles },
@@ -70,7 +69,13 @@ export function Sidebar() {
       <div className="p-4 border-t">
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-600">スペース</span>
-          <button className="text-purple-600 hover:text-purple-700">+</button>
+          <button
+            className="text-purple-600 hover:text-purple-700"
+            aria-label="新しいスペースを追加"
+            type="button"
+          >
+            +
+          </button>
         </div>
       </div>
     </aside>

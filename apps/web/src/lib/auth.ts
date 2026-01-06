@@ -9,7 +9,10 @@ import { prisma } from './prisma';
  * 環境変数の検証
  * 本番環境では必須の環境変数が設定されていることを確認
  */
-if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+const hasGoogleCredentials =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
+
+if (!hasGoogleCredentials) {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Google OAuth credentials are required in production');
   }
@@ -28,10 +31,15 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+    // 環境変数が設定されている場合のみGoogleプロバイダーを追加
+    ...(hasGoogleCredentials
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     session: async ({ session, user }: { session: Session; user: User }) => {
