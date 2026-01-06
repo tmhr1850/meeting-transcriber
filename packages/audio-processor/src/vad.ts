@@ -46,14 +46,37 @@ export class VoiceActivityDetector {
    * @param audioContext - Web Audio API AudioContext
    * @param source - 分析対象のMediaStreamAudioSourceNode
    * @param options - 設定オプション
+   * @throws audioContextまたはsourceがnullの場合
+   * @throws thresholdが範囲外の場合（0-255）
+   * @throws silenceTimeoutが負の値の場合
    */
   constructor(
     audioContext: AudioContext,
     source: MediaStreamAudioSourceNode,
     options: VADOptions = {}
   ) {
-    this.threshold = options.threshold ?? 30;
-    this.silenceTimeout = options.silenceTimeout ?? 2000;
+    // 入力検証: audioContextとsourceは必須
+    if (!audioContext) {
+      throw new Error('audioContextは必須パラメータです');
+    }
+    if (!source) {
+      throw new Error('sourceは必須パラメータです');
+    }
+
+    // 入力検証: thresholdは0-255の範囲に制限
+    const threshold = options.threshold ?? 30;
+    if (threshold < 0 || threshold > 255) {
+      throw new Error(`thresholdは0-255の範囲で指定してください（指定値: ${threshold}）`);
+    }
+    this.threshold = threshold;
+
+    // 入力検証: silenceTimeoutは0以上
+    const silenceTimeout = options.silenceTimeout ?? 2000;
+    if (silenceTimeout < 0) {
+      throw new Error(`silenceTimeoutは0以上の値を指定してください（指定値: ${silenceTimeout}）`);
+    }
+    this.silenceTimeout = silenceTimeout;
+
     this.lastVoiceTime = Date.now();
 
     // 周波数分析用のアナライザーノードを作成

@@ -10,6 +10,11 @@ export interface ChunkerOptions {
   minChunkSize?: number;
   /** チャンク間のオーバーラップ時間（デフォルト: 500ms） */
   overlapDuration?: number;
+  /**
+   * メモリ保護: 保持する最大チャンク数（デフォルト: 10）
+   * processChunks()が呼ばれない場合でもメモリ消費を制限
+   */
+  maxChunks?: number;
   /** チャンク準備完了時に呼び出されるコールバック */
   onChunk: (blob: Blob, timestamp: number) => void;
   /** エラー発生時に呼び出されるコールバック（オプション） */
@@ -53,6 +58,7 @@ export class AudioChunker {
     chunkDuration: number;
     minChunkSize: number;
     overlapDuration: number;
+    maxChunks: number;
     onChunk: (blob: Blob, timestamp: number) => void;
     onError?: (error: Error) => void;
   };
@@ -62,6 +68,7 @@ export class AudioChunker {
       chunkDuration: options.chunkDuration ?? AUDIO_CONFIG.CHUNK_DURATION_MS,
       minChunkSize: options.minChunkSize ?? AUDIO_CONFIG.MIN_CHUNK_SIZE,
       overlapDuration: options.overlapDuration ?? AUDIO_CONFIG.OVERLAP_DURATION_MS,
+      maxChunks: options.maxChunks ?? 10,
       onChunk: options.onChunk,
       onError: options.onError,
     };
@@ -92,6 +99,11 @@ export class AudioChunker {
 
     this.mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > this.options.minChunkSize) {
+        // メモリ保護: 最大チャンク数を超える場合は古いチャンクを削除
+        if (this.chunks.length >= this.options.maxChunks) {
+          this.chunks.shift(); // 最も古いチャンクを削除
+        }
+
         this.chunks.push(event.data);
         try {
           this.processChunks();
@@ -158,6 +170,8 @@ export class AudioChunker {
 
     if (elapsed >= this.options.chunkDuration) {
       const combinedBlob = new Blob(this.chunks, { type: this.selectedMimeType });
+      // タイムスタンプ: このチャンクセットの開始時刻（録音開始からのミリ秒）
+      // 注意: 実際の音声開始時刻との若干のずれが発生する可能性があります
       const timestamp = this.lastChunkTime - this.startTime;
 
       this.options.onChunk(combinedBlob, timestamp);
