@@ -65,15 +65,31 @@ async function handleMessage(
 ): Promise<ExtensionMessageResponse> {
   switch (message.type) {
     case 'START_RECORDING':
+      // 必須フィールドの検証
+      if (!('meetingInfo' in message)) {
+        return { success: false, error: 'meetingInfo is required' };
+      }
+      if (!message.meetingInfo || typeof message.meetingInfo !== 'object') {
+        return { success: false, error: 'Invalid meetingInfo' };
+      }
       return await startRecording(sender.tab?.id, message.meetingInfo);
 
     case 'STOP_RECORDING':
+      // STOP_RECORDINGは追加フィールド不要
       return await stopRecording();
 
     case 'GET_STATUS':
+      // GET_STATUSは追加フィールド不要
       return await getState();
 
     case 'TRANSCRIPT_RECEIVED':
+      // 必須フィールドの検証
+      if (!('data' in message)) {
+        return { success: false, error: 'data is required' };
+      }
+      if (!message.data || typeof message.data !== 'object') {
+        return { success: false, error: 'Invalid data' };
+      }
       return await handleTranscriptReceived(message.data);
 
     default:
@@ -125,9 +141,14 @@ async function startRecording(
   }
 
   try {
-    // Offscreen Document作成
+    // Offscreen Document作成（二重起動防止）
     const contexts = await chrome.runtime.getContexts({});
     const offscreenExists = contexts.some((c) => c.contextType === 'OFFSCREEN_DOCUMENT');
+
+    if (offscreenExists && currentState.isRecording) {
+      // Offscreen Documentが存在し、かつ録音中の場合はエラー
+      return { success: false, error: 'Offscreen Document is already recording' };
+    }
 
     if (!offscreenExists) {
       await chrome.offscreen.createDocument({
@@ -135,6 +156,8 @@ async function startRecording(
         reasons: [chrome.offscreen.Reason.USER_MEDIA],
         justification: 'Recording tab audio for transcription',
       });
+      // Offscreen Documentの初期化待機（100ms）
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     // tabCapture用のstreamIdを取得
