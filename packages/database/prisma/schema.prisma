@@ -87,8 +87,8 @@ model Meeting {
   user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   segments TranscriptSegment[]
 
-  @@index([userId])
-  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([userId, status])
   @@index([platform])
 }
 
@@ -97,15 +97,14 @@ model TranscriptSegment {
   meetingId  String
   speaker    String
   text       String   @db.Text
-  timestamp  DateTime // 会議開始からの経過時間をDateTimeで保存
+  timestamp  Int      // 会議開始からの経過秒数
   confidence Float    @default(0.9)
   chunkIndex Int
   createdAt  DateTime @default(now())
 
   meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
-  @@index([meetingId])
-  @@index([timestamp])
+  @@index([meetingId, timestamp])
 }
 
 // ============================================
