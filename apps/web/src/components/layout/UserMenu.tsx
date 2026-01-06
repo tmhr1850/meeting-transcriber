@@ -14,13 +14,14 @@ import type { Session } from 'next-auth';
 import { LogOut, User, Settings } from 'lucide-react';
 
 interface UserMenuProps {
-  session: Session;
+  user: Session['user'];
 }
 
 /**
  * ユーザーメニューコンポーネント
  */
-export function UserMenu({ session }: UserMenuProps) {
+export function UserMenu({ user }: UserMenuProps) {
+  const session = { user } as Session;
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

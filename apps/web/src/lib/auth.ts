@@ -14,8 +14,7 @@ import NextAuth, { type DefaultSession } from 'next-auth';
 import type { Session } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import type { User } from '@prisma/client';
-import { prisma } from './prisma';
+import { prisma, type User } from '@meeting-transcriber/database';
 
 /**
  * 型定義の拡張
@@ -48,7 +47,7 @@ if (!hasGoogleCredentials) {
 /**
  * NextAuth.js v5設定
  */
-export const { handlers, signIn, signOut, auth } = NextAuth({
+const nextAuth = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
     // 環境変数が設定されている場合のみGoogleプロバイダーを追加
@@ -77,8 +76,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
      * セッションコールバック
      * セッションにユーザーIDを追加
      */
-    session: async ({ session, user }: { session: Session; user: User }) => {
-      if (session?.user) {
+    session: async ({ session, user }) => {
+      if (session?.user && user) {
         session.user.id = user.id;
       }
       return session;
@@ -92,4 +91,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   debug: process.env.NODE_ENV === 'development',
 });
 
+export const handlers = nextAuth.handlers;
+export const signIn = nextAuth.signIn;
+export const signOut = nextAuth.signOut;
+export const auth = nextAuth.auth;
 export const { GET, POST } = handlers;

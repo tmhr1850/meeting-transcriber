@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
+    "@meeting-transcriber/database": "workspace:*",
     "@meeting-transcriber/shared": "workspace:*",
     "@prisma/client": "^6.1.0",
     "clsx": "^2.1.0",
