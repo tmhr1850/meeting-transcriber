@@ -57,8 +57,18 @@ export default defineManifest({
 
   web_accessible_resources: [
     {
-      resources: ['*.js', '*.css', '*.svg', '*.png'],
-      matches: ['https://meet.google.com/*'],
+      resources: [
+        'src/content/shared/styles.css',
+        'icons/icon-16.png',
+        'icons/icon-48.png',
+        'icons/icon-128.png',
+      ],
+      matches: [
+        'https://meet.google.com/*',
+        'https://*.zoom.us/*',
+        'https://teams.microsoft.com/*',
+        'https://teams.live.com/*',
+      ],
     },
   ],
 });

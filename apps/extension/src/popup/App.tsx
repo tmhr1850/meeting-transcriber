@@ -1,33 +1,64 @@
 import { useEffect, useState } from 'react';
-
-interface Status {
-  isRecording: boolean;
-  currentMeetingId: string | null;
-}
+import type { RecordingState, ExtensionMessage } from '@meeting-transcriber/shared';
 
 export function App() {
-  const [status, setStatus] = useState<Status>({ isRecording: false, currentMeetingId: null });
+  const [status, setStatus] = useState<RecordingState>({
+    isRecording: false,
+    currentMeetingId: null,
+    currentTabId: null,
+    startTime: null,
+  });
   const [isOnMeetingPage, setIsOnMeetingPage] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // ステータス取得
-    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
-      setStatus(response);
+    // エラーハンドリング付きでステータス取得
+    const fetchStatus = async () => {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'GET_STATUS',
+        } as ExtensionMessage);
+        if (response) {
+          setStatus(response);
+        }
+      } catch (err) {
+        console.error('Failed to get status:', err);
+        setError('ステータスの取得に失敗しました');
+      }
+    };
+
+    // 認証状態を確認
+    chrome.storage.local.get('authToken', (result) => {
+      setIsAuthenticated(!!result.authToken);
     });
 
-    // 現在のタブを確認
+    // 現在のタブを確認（エラーハンドリング付き）
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to query tabs:', chrome.runtime.lastError);
+        setError('タブ情報の取得に失敗しました');
+        return;
+      }
       const url = tabs[0]?.url || '';
       setIsOnMeetingPage(
         url.includes('meet.google.com') ||
-        url.includes('zoom.us') ||
-        url.includes('teams.microsoft.com')
+          url.includes('zoom.us') ||
+          url.includes('teams.microsoft.com') ||
+          url.includes('teams.live.com')
       );
     });
+
+    fetchStatus();
   }, []);
 
   const openDashboard = () => {
-    chrome.tabs.create({ url: import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000' });
+    try {
+      chrome.tabs.create({ url: import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000' });
+    } catch (err) {
+      console.error('Failed to open dashboard:', err);
+      setError('ダッシュボードを開けませんでした');
+    }
   };
 
   return (
@@ -39,6 +70,23 @@ export function App() {
         <h1 className="text-lg font-bold">Meeting Transcriber</h1>
       </div>
 
+      {/* エラー表示 */}
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+          <span className="text-red-700 text-sm">{error}</span>
+        </div>
+      )}
+
+      {/* 認証状態の確認 */}
+      {!isAuthenticated && !error && (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+          <span className="text-yellow-700 text-sm">
+            ダッシュボードからログインしてください
+          </span>
+        </div>
+      )}
+
+      {/* 録音状態表示 */}
       {status.isRecording ? (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
           <div className="flex items-center gap-2">
@@ -58,7 +106,8 @@ export function App() {
 
       <button
         onClick={openDashboard}
-        className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+        className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={!!error}
       >
         ダッシュボードを開く
       </button>

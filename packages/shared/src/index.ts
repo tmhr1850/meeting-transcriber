@@ -3,6 +3,7 @@ export * from './types/meeting';
 export * from './types/transcript';
 export * from './types/user';
 export * from './types/api';
+export * from './types/extension';
 
 // Constants
 export * from './constants/platforms';
