@@ -7,7 +7,7 @@ export interface ApiError {
   /** エラーメッセージ */
   message: string;
   /** 追加の詳細情報 */
-  details?: unknown;
+  details?: Record<string, unknown>;
 }
 
 /**

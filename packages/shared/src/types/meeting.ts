@@ -1,8 +1,7 @@
 import type { Platform } from '../constants/platforms';
+import type { MeetingStatus } from '../constants/meeting';
 
-export type { Platform };
-
-export type MeetingStatus = 'in_progress' | 'completed' | 'processing' | 'failed';
+export type { Platform, MeetingStatus };
 
 /**
  * 会議セッションのメタデータとステータス追跡
