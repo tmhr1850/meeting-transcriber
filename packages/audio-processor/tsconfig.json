@@ -2,10 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
-    "declaration": true,
-    "declarationMap": true,
-    "noEmit": false
+    "noEmit": false,
+    "paths": {
+      "@meeting-transcriber/shared": ["../shared/src"]
+    }
   },
   "include": ["src/**/*"]
 }
