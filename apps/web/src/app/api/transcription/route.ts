@@ -28,6 +28,9 @@ import type { MeetingStatus } from '@meeting-transcriber/database';
  * 認証必須、会議の所有者のみアクセス可能
  */
 export async function POST(request: NextRequest) {
+  // エラーハンドリング用にスコープ外で宣言
+  let meetingId: string | null = null;
+
   try {
     // 1. 認証チェック
     const session = await auth();
@@ -42,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // 2. リクエストボディの解析（multipart/form-data）
     const formData = await request.formData();
-    const meetingId = formData.get('meetingId') as string;
+    meetingId = formData.get('meetingId') as string;
     const audioFile = formData.get('audioFile') as File;
     const language = (formData.get('language') as string) || 'ja';
 
@@ -91,6 +94,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`会議 ${meetingId} の文字起こし処理を開始します...`);
 
+    // 進捗: 10% - 処理開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 10 },
+    });
+
     // 6. Whisper APIで文字起こし
     let results;
     const maxFileSize = 25 * 1024 * 1024; // 25MB
@@ -98,22 +107,35 @@ export async function POST(request: NextRequest) {
     if (audioFile.size > maxFileSize) {
       // 25MB超の場合はチャンク分割
       console.log(`音声ファイルが大きいため、チャンク分割処理を実行します (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
-      results = await transcribeLongAudio(audioFile, { language });
 
-      // 進捗を50%に更新
+      // 進捗: 20% - チャンク分割処理開始
       await prisma.meeting.update({
         where: { id: meetingId },
-        data: { processingProgress: 50 },
+        data: { processingProgress: 20 },
+      });
+
+      results = await transcribeLongAudio(audioFile, { language });
+
+      // 進捗: 70% - 文字起こし完了
+      await prisma.meeting.update({
+        where: { id: meetingId },
+        data: { processingProgress: 70 },
       });
     } else {
       // 25MB以下の場合は通常の文字起こし
+      // 進捗: 25% - Whisper API呼び出し開始
+      await prisma.meeting.update({
+        where: { id: meetingId },
+        data: { processingProgress: 25 },
+      });
+
       const result = await transcribeAudio(audioFile, { language });
       results = [result];
 
-      // 進捗を50%に更新
+      // 進捗: 70% - 文字起こし完了
       await prisma.meeting.update({
         where: { id: meetingId },
-        data: { processingProgress: 50 },
+        data: { processingProgress: 70 },
       });
     }
 
@@ -121,6 +143,12 @@ export async function POST(request: NextRequest) {
     const mergedResult = mergeTranscriptionResults(results);
 
     console.log(`文字起こし完了: ${mergedResult.text.length}文字, ${mergedResult.segments?.length || 0}セグメント`);
+
+    // 進捗: 80% - データベース保存開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 80 },
+    });
 
     // 8. データベースに保存
     if (mergedResult.segments && mergedResult.segments.length > 0) {
@@ -142,6 +170,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 9. 会議情報を更新（ステータス、時間）
+    // 進捗: 100% - 完了
     await prisma.meeting.update({
       where: { id: meetingId },
       data: {
@@ -166,9 +195,6 @@ export async function POST(request: NextRequest) {
     console.error('文字起こしAPIエラー:', error);
 
     // エラー時は会議のステータスを「失敗」に更新
-    const formData = await request.formData();
-    const meetingId = formData.get('meetingId') as string;
-
     if (meetingId) {
       try {
         await prisma.meeting.update({

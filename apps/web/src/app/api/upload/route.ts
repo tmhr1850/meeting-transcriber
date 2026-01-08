@@ -19,15 +19,31 @@ import { prisma } from '@/lib/prisma';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
 import type { Platform, MeetingStatus } from '@meeting-transcriber/database';
 
-// 最大ファイルサイズ（25MB）
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
-
 /**
  * POST /api/upload
  *
  * 音声ファイルをアップロードし、非同期で文字起こし処理を開始します。
  *
  * 認証必須
+ *
+ * ⚠️ **WARNING: 本番環境での制限事項**
+ *
+ * この実装は開発・テスト用です。本番環境では以下の制限があります:
+ *
+ * 1. **タイムアウト制限**
+ *    - Vercel無料プラン: 10秒
+ *    - Vercel Proプラン: 60秒
+ *    - 長時間の文字起こし処理が途中で切断される可能性があります
+ *
+ * 2. **エラーハンドリングの不足**
+ *    - fire-and-forgetパターンのため、エラー追跡が困難
+ *    - リトライ機能が実装されていません
+ *
+ * 3. **推奨対応**
+ *    本番デプロイ前に必ずバックグラウンドジョブキューを導入してください:
+ *    - **Inngest** (推奨): Next.jsと統合が簡単、無料プランあり
+ *    - **BullMQ**: Redis必須だが高機能
+ *    - **Trigger.dev**: 開発者体験が良い
  */
 export async function POST(request: NextRequest) {
   try {
@@ -129,6 +145,12 @@ async function processTranscriptionAsync(
   try {
     console.log(`[非同期処理] 会議 ${meetingId} の文字起こしを開始します...`);
 
+    // 進捗: 10% - 処理開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 10 },
+    });
+
     // 1. Whisper APIで文字起こし
     let results;
     const maxFileSize = 25 * 1024 * 1024; // 25MB
@@ -136,22 +158,35 @@ async function processTranscriptionAsync(
     if (audioFile.size > maxFileSize) {
       // 25MB超の場合はチャンク分割
       console.log(`[非同期処理] 音声ファイルが大きいため、チャンク分割処理を実行します (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
-      results = await transcribeLongAudio(audioFile, { language });
 
-      // 進捗を50%に更新
+      // 進捗: 20% - チャンク分割処理開始
       await prisma.meeting.update({
         where: { id: meetingId },
-        data: { processingProgress: 50 },
+        data: { processingProgress: 20 },
+      });
+
+      results = await transcribeLongAudio(audioFile, { language });
+
+      // 進捗: 70% - 文字起こし完了
+      await prisma.meeting.update({
+        where: { id: meetingId },
+        data: { processingProgress: 70 },
       });
     } else {
       // 25MB以下の場合は通常の文字起こし
+      // 進捗: 25% - Whisper API呼び出し開始
+      await prisma.meeting.update({
+        where: { id: meetingId },
+        data: { processingProgress: 25 },
+      });
+
       const result = await transcribeAudio(audioFile, { language });
       results = [result];
 
-      // 進捗を50%に更新
+      // 進捗: 70% - 文字起こし完了
       await prisma.meeting.update({
         where: { id: meetingId },
-        data: { processingProgress: 50 },
+        data: { processingProgress: 70 },
       });
     }
 
@@ -159,6 +194,12 @@ async function processTranscriptionAsync(
     const mergedResult = mergeTranscriptionResults(results);
 
     console.log(`[非同期処理] 文字起こし完了: ${mergedResult.text.length}文字, ${mergedResult.segments?.length || 0}セグメント`);
+
+    // 進捗: 80% - データベース保存開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 80 },
+    });
 
     // 3. データベースに保存
     if (mergedResult.segments && mergedResult.segments.length > 0) {
@@ -180,6 +221,7 @@ async function processTranscriptionAsync(
     }
 
     // 4. 会議情報を更新（ステータス、時間）
+    // 進捗: 100% - 完了
     await prisma.meeting.update({
       where: { id: meetingId },
       data: {

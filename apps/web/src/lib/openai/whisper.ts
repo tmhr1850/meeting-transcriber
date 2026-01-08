@@ -210,49 +210,35 @@ export async function transcribeLongAudio(
 /**
  * 音声ファイルをチャンクに分割
  *
- * NOTE: この実装は簡易版です。本番環境では以下のいずれかを使用することを推奨します:
- * - Web Audio APIを使用したブラウザ側での分割
- * - FFmpegを使用したサーバー側での分割
- * - MediaRecorder APIでの録音時の事前分割
+ * CRITICAL: バイト単位での分割は音声ファイルのフォーマットを破損させるため、
+ * 本番環境では以下のいずれかを実装する必要があります:
+ *
+ * **推奨オプション:**
+ * 1. FFmpegを使用したサーバー側での分割（最も信頼性が高い）
+ * 2. 最大ファイルサイズを25MBに制限し、分割処理を削除
+ * 3. クライアント側（Chrome拡張）で録音時に事前分割
+ *
+ * **現在の実装:**
+ * 25MBを超えるファイルはエラーを返します。
+ * FFmpegの導入または録音時の事前分割が必要です。
  *
  * @param audioFile - 音声ファイル
  * @param chunkDurationSeconds - チャンクの長さ（秒）
  * @returns 分割されたチャンク配列
+ * @throws Error 25MB超のファイルはサポートされていません
  */
 async function splitAudioIntoChunks(
   audioFile: File | Blob,
   chunkDurationSeconds: number
 ): Promise<AudioChunk[]> {
-  // TODO: Web Audio APIまたはFFmpegを使用した実際のチャンク分割処理
-  // 現在は簡易実装として、ファイルサイズベースで分割
-
-  const maxChunkSize = 24 * 1024 * 1024; // 24MB（安全マージン含む）
-  const chunks: AudioChunk[] = [];
-
-  const totalSize = audioFile.size;
-  let offset = 0;
-  let chunkIndex = 0;
-
-  while (offset < totalSize) {
-    const chunkSize = Math.min(maxChunkSize, totalSize - offset);
-    const chunkBlob = audioFile.slice(offset, offset + chunkSize);
-
-    // 推定時間（実際の音声長とは異なる可能性があります）
-    const estimatedStartTime = chunkIndex * chunkDurationSeconds;
-    const estimatedEndTime = (chunkIndex + 1) * chunkDurationSeconds;
-
-    chunks.push({
-      index: chunkIndex,
-      data: chunkBlob,
-      startTime: estimatedStartTime,
-      endTime: estimatedEndTime,
-    });
-
-    offset += chunkSize;
-    chunkIndex++;
-  }
-
-  return chunks;
+  // CRITICAL: バイト分割では音声ファイルが破損します
+  // 暫定対応: 25MB超のファイルはエラーを返す
+  throw new Error(
+    '25MBを超える音声ファイルは現在サポートされていません。\n' +
+    'FFmpegによる正しいチャンク分割処理の実装、または\n' +
+    'クライアント側での録音時の事前分割が必要です。\n' +
+    `ファイルサイズ: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`
+  );
 }
 
 /**
