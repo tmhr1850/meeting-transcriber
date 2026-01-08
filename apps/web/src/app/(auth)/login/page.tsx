@@ -11,24 +11,26 @@ import { AuthError } from 'next-auth';
 
 /**
  * Google OAuth ログインアクション
+ *
+ * @param callbackUrl - ログイン後のリダイレクト先URL
  */
-async function handleGoogleSignIn() {
+async function handleGoogleSignIn(callbackUrl?: string) {
   'use server';
 
   try {
     await signIn('google', {
-      redirectTo: '/dashboard',
+      redirectTo: callbackUrl || '/dashboard',
     });
   } catch (error) {
     // NextAuthがリダイレクトをスローするため、それ以外のエラーのみ処理
     if (error instanceof AuthError) {
       switch (error.type) {
         case 'AccessDenied':
-          redirect('/login?error=AccessDenied');
+          return redirect('/login?error=AccessDenied');
         case 'OAuthSignInError':
-          redirect('/login?error=OAuthSignInError');
+          return redirect('/login?error=OAuthSignInError');
         default:
-          redirect('/login?error=Unknown');
+          return redirect('/login?error=Unknown');
       }
     }
     throw error;
@@ -73,7 +75,7 @@ export default function LoginPage({
             </div>
           )}
 
-          <form action={handleGoogleSignIn}>
+          <form action={() => handleGoogleSignIn(searchParams.callbackUrl)}>
             <button
               type="submit"
               className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"

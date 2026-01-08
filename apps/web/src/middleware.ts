@@ -24,9 +24,15 @@ const publicPaths = ['/login', '/api/auth'];
  * ミドルウェア
  * すべてのリクエストに対して実行される
  */
-const middleware: any = auth((req: any) => {
+const middleware = auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
+
+  // ログイン済みでログインページにアクセスした場合はダッシュボードにリダイレクト
+  // 注: publicPathsチェックの前に実行して、リダイレクトループを防ぐ
+  if (pathname === '/login' && isLoggedIn) {
+    return NextResponse.redirect(new URL('/dashboard', req.url));
+  }
 
   // 公開パスは認証チェックをスキップ
   const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
@@ -40,11 +46,6 @@ const middleware: any = auth((req: any) => {
     const loginUrl = new URL('/login', req.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
-  }
-
-  // ログイン済みでログインページにアクセスした場合はダッシュボードにリダイレクト
-  if (pathname === '/login' && isLoggedIn) {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
   return NextResponse.next();

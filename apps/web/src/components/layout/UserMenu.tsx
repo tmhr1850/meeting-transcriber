@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
 import Image from 'next/image';
+import Link from 'next/link';
 import type { Session } from 'next-auth';
 import { LogOut, User, Settings } from 'lucide-react';
 
@@ -88,21 +89,21 @@ export function UserMenu({ user }: UserMenuProps) {
           </div>
 
           <div className="border-t border-gray-100">
-            <a
+            <Link
               href="/settings"
               className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               role="menuitem"
             >
               <Settings className="h-4 w-4" />
               設定
-            </a>
-            <a
+            </Link>
+            <Link
               href="/meetings"
               className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               role="menuitem"
             >
               会議一覧
-            </a>
+            </Link>
           </div>
 
           <div className="border-t border-gray-100">

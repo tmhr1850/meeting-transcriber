@@ -10,23 +10,10 @@
  * - NEXTAUTH_SECRET
  */
 
-import NextAuth, { type DefaultSession } from 'next-auth';
-import type { Session } from 'next-auth';
+import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import { prisma, type User } from '@meeting-transcriber/database';
-
-/**
- * 型定義の拡張
- * セッションにユーザーIDを含める
- */
-declare module 'next-auth' {
-  interface Session {
-    user: {
-      id: string;
-    } & DefaultSession['user'];
-  }
-}
+import { prisma } from '@meeting-transcriber/database';
 
 /**
  * 環境変数の検証
