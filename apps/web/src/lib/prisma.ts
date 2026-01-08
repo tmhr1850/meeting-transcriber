@@ -17,3 +17,6 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
+
+// 型をエクスポート
+export type { User } from '@prisma/client';

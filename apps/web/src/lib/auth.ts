@@ -1,8 +1,6 @@
 import NextAuth from 'next-auth';
-import type { Session } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import type { User } from '@prisma/client';
 import { prisma } from './prisma';
 
 /**
@@ -13,9 +11,6 @@ const hasGoogleCredentials =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
 
 if (!hasGoogleCredentials) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Google OAuth credentials are required in production');
-  }
   console.warn(
     'Warning: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set. Authentication will not work.'
   );
@@ -28,7 +23,7 @@ if (!hasGoogleCredentials) {
  * - GOOGLE_CLIENT_SECRET
  * - NEXTAUTH_SECRET
  */
-export const { handlers, signIn, signOut, auth } = NextAuth({
+const nextAuthConfig = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
     // 環境変数が設定されている場合のみGoogleプロバイダーを追加
@@ -42,8 +37,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       : []),
   ],
   callbacks: {
-    session: async ({ session, user }: { session: Session; user: User }) => {
-      if (session?.user) {
+    session: async ({ session, user }) => {
+      if (session?.user && user?.id) {
         session.user.id = user.id;
       }
       return session;
@@ -53,3 +48,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: '/login',
   },
 });
+
+export const handlers: typeof nextAuthConfig.handlers = nextAuthConfig.handlers;
+export const signIn: typeof nextAuthConfig.signIn = nextAuthConfig.signIn;
+export const signOut: typeof nextAuthConfig.signOut = nextAuthConfig.signOut;
+export const auth: typeof nextAuthConfig.auth = nextAuthConfig.auth;
