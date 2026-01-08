@@ -15,10 +15,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
-import type { MeetingStatus } from '@meeting-transcriber/database';
+
+/**
+ * リクエストボディのバリデーションスキーマ
+ */
+const transcriptionRequestSchema = z.object({
+  meetingId: z.string().min(1, 'meetingIdは必須です'),
+  audioFile: z.instanceof(File, { message: 'audioFileは必須です' }),
+  language: z.string().optional().default('ja'),
+});
 
 /**
  * POST /api/transcription
@@ -45,24 +54,29 @@ export async function POST(request: NextRequest) {
 
     // 2. リクエストボディの解析（multipart/form-data）
     const formData = await request.formData();
-    meetingId = formData.get('meetingId') as string;
-    const audioFile = formData.get('audioFile') as File;
-    const language = (formData.get('language') as string) || 'ja';
 
-    // 3. バリデーション
-    if (!meetingId) {
+    // 3. Zodでバリデーション
+    const validationResult = transcriptionRequestSchema.safeParse({
+      meetingId: formData.get('meetingId'),
+      audioFile: formData.get('audioFile'),
+      language: formData.get('language') || 'ja',
+    });
+
+    if (!validationResult.success) {
       return NextResponse.json(
-        { error: 'meetingIdは必須です' },
+        {
+          error: 'バリデーションエラー',
+          details: validationResult.error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        },
         { status: 400 }
       );
     }
 
-    if (!audioFile) {
-      return NextResponse.json(
-        { error: 'audioFileは必須です' },
-        { status: 400 }
-      );
-    }
+    const { meetingId: validatedMeetingId, audioFile, language } = validationResult.data;
+    meetingId = validatedMeetingId;
 
     // 4. 会議の存在確認と所有者チェック
     const meeting = await prisma.meeting.findUnique({

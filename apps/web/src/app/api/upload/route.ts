@@ -14,10 +14,27 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, type Platform, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
-import type { Platform, MeetingStatus } from '@meeting-transcriber/database';
+
+/**
+ * リクエストボディのバリデーションスキーマ
+ */
+const uploadRequestSchema = z.object({
+  audioFile: z.instanceof(File, { message: 'audioFileは必須です' })
+    .refine(file => file.size > 0, 'audioFileが空です')
+    .refine(
+      file => {
+        const supportedFormats = ['audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg'];
+        return !file.type || supportedFormats.includes(file.type);
+      },
+      'サポートされていない音声形式です'
+    ),
+  title: z.string().optional().default('音声ファイルのアップロード'),
+  language: z.string().optional().default('ja'),
+});
 
 /**
  * POST /api/upload
@@ -60,32 +77,28 @@ export async function POST(request: NextRequest) {
 
     // 2. リクエストボディの解析（multipart/form-data）
     const formData = await request.formData();
-    const audioFile = formData.get('audioFile') as File;
-    const title = (formData.get('title') as string) || '音声ファイルのアップロード';
-    const language = (formData.get('language') as string) || 'ja';
 
-    // 3. バリデーション
-    if (!audioFile) {
+    // 3. Zodでバリデーション
+    const validationResult = uploadRequestSchema.safeParse({
+      audioFile: formData.get('audioFile'),
+      title: formData.get('title') || '音声ファイルのアップロード',
+      language: formData.get('language') || 'ja',
+    });
+
+    if (!validationResult.success) {
       return NextResponse.json(
-        { error: 'audioFileは必須です' },
+        {
+          error: 'バリデーションエラー',
+          details: validationResult.error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
+        },
         { status: 400 }
       );
     }
 
-    // ファイルサイズチェック（拡張: 25MBを超える場合も受け付け、チャンク処理）
-    // NOTE: 実際にはファイルサイズ制限を緩和し、大きなファイルも処理可能
-    if (audioFile.size === 0) {
-      return NextResponse.json(
-        { error: '音声ファイルが空です' },
-        { status: 400 }
-      );
-    }
-
-    // ファイル形式チェック（オプション）
-    const supportedFormats = ['audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg'];
-    if (audioFile.type && !supportedFormats.includes(audioFile.type)) {
-      console.warn(`サポートされていない可能性のある音声形式: ${audioFile.type}`);
-    }
+    const { audioFile, title, language } = validationResult.data;
 
     console.log(`音声ファイルアップロード: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
 

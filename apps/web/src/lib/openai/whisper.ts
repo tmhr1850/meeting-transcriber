@@ -9,6 +9,53 @@ import { openai } from './client';
 import type { Transcription } from 'openai/resources/audio/transcriptions';
 
 /**
+ * 指数バックオフでリトライを実行
+ *
+ * @param fn - リトライする非同期関数
+ * @param maxRetries - 最大リトライ回数（デフォルト: 3）
+ * @param initialDelayMs - 初回遅延時間（ミリ秒、デフォルト: 1000）
+ * @returns 関数の実行結果
+ * @throws 最終的なエラー（全てのリトライが失敗した場合）
+ */
+async function retryWithExponentialBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // 最後の試行の場合はエラーをスロー
+      if (attempt === maxRetries) {
+        console.error(`リトライ失敗: ${maxRetries + 1}回試行しましたが失敗しました`, lastError);
+        throw lastError;
+      }
+
+      // 指数バックオフで待機時間を計算
+      const delayMs = initialDelayMs * Math.pow(2, attempt);
+      const jitter = Math.random() * 0.3 * delayMs; // ±30%のジッター
+      const totalDelay = delayMs + jitter;
+
+      console.warn(
+        `リトライ ${attempt + 1}/${maxRetries}: ${totalDelay.toFixed(0)}ms後に再試行します`,
+        lastError.message
+      );
+
+      // 待機
+      await new Promise(resolve => setTimeout(resolve, totalDelay));
+    }
+  }
+
+  // TypeScriptの型チェックのため（実際にはここには到達しない）
+  throw lastError || new Error('リトライ処理で予期しないエラーが発生しました');
+}
+
+/**
  * 文字起こしオプション
  */
 export interface TranscriptionOptions {
@@ -95,15 +142,21 @@ export async function transcribeAudio(
       ? audioFile
       : new File([audioFile], 'audio.webm', { type: audioFile.type || 'audio/webm' });
 
-    // Whisper APIリクエスト
-    const response = await openai.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      language,
-      response_format: responseFormat,
-      prompt,
-      temperature,
-    });
+    // Whisper APIリクエスト（リトライロジック付き）
+    const response = await retryWithExponentialBackoff(
+      async () => {
+        return await openai.audio.transcriptions.create({
+          file,
+          model: 'whisper-1',
+          language,
+          response_format: responseFormat,
+          prompt,
+          temperature,
+        });
+      },
+      3, // 最大3回リトライ
+      1000 // 初回1秒待機
+    );
 
     // verbose_json形式の場合は詳細情報を返す
     if (responseFormat === 'verbose_json') {
