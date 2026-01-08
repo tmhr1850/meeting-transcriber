@@ -12,10 +12,12 @@ import { AuthError } from 'next-auth';
 /**
  * Google OAuth ログインアクション
  *
- * @param callbackUrl - ログイン後のリダイレクト先URL
+ * @param formData - フォームデータ（callbackUrlを含む）
  */
-async function handleGoogleSignIn(callbackUrl?: string) {
+async function handleGoogleSignIn(formData: FormData) {
   'use server';
+
+  const callbackUrl = formData.get('callbackUrl') as string | null;
 
   try {
     await signIn('google', {
@@ -75,7 +77,10 @@ export default function LoginPage({
             </div>
           )}
 
-          <form action={() => handleGoogleSignIn(searchParams.callbackUrl)}>
+          <form action={handleGoogleSignIn}>
+            {searchParams.callbackUrl && (
+              <input type="hidden" name="callbackUrl" value={searchParams.callbackUrl} />
+            )}
             <button
               type="submit"
               className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
