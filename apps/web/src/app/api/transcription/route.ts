@@ -91,7 +91,20 @@ export async function POST(request: NextRequest) {
     const { meetingId: validatedMeetingId, audioFile, language } = validationResult.data;
     meetingId = validatedMeetingId;
 
-    // 4. 会議の存在確認と所有者チェック
+    // 4. ファイルサイズ制限チェック（25MB）
+    // CRITICAL: splitAudioIntoChunksが未実装のため、25MB超は拒否
+    const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
+    if (audioFile.size > MAX_AUDIO_SIZE) {
+      return NextResponse.json(
+        {
+          error: '音声ファイルが大きすぎます',
+          details: `現在は25MBまでのファイルのみサポートしています。ファイルサイズ: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`,
+        },
+        { status: 413 } // Payload Too Large
+      );
+    }
+
+    // 5. 会議の存在確認と所有者チェック
     const meeting = await prisma.meeting.findUnique({
       where: { id: meetingId },
     });
@@ -127,44 +140,21 @@ export async function POST(request: NextRequest) {
       data: { processingProgress: 10 },
     });
 
-    // 6. Whisper APIで文字起こし
-    let results;
-    const maxFileSize = 25 * 1024 * 1024; // 25MB
+    // 6. Whisper APIで文字起こし（25MB以下のみサポート）
+    // 進捗: 25% - Whisper API呼び出し開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 25 },
+    });
 
-    if (audioFile.size > maxFileSize) {
-      // 25MB超の場合はチャンク分割
-      console.log(`音声ファイルが大きいため、チャンク分割処理を実行します (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
+    const result = await transcribeAudio(audioFile, { language });
+    const results = [result];
 
-      // 進捗: 20% - チャンク分割処理開始
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 20 },
-      });
-
-      results = await transcribeLongAudio(audioFile, { language });
-
-      // 進捗: 70% - 文字起こし完了
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 70 },
-      });
-    } else {
-      // 25MB以下の場合は通常の文字起こし
-      // 進捗: 25% - Whisper API呼び出し開始
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 25 },
-      });
-
-      const result = await transcribeAudio(audioFile, { language });
-      results = [result];
-
-      // 進捗: 70% - 文字起こし完了
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 70 },
-      });
-    }
+    // 進捗: 70% - 文字起こし完了
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 70 },
+    });
 
     // 7. 結果を統合
     const mergedResult = mergeTranscriptionResults(results);

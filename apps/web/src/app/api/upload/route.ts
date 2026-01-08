@@ -19,8 +19,9 @@ import { auth } from '@/lib/auth';
 import { prisma, type Platform, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
 
-// セキュリティ: ファイルサイズ上限（100MB）
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+// セキュリティ: ファイルサイズ上限（25MB）
+// CRITICAL: splitAudioIntoChunksが未実装のため、現在は25MBまでのみサポート
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 /**
  * リクエストボディのバリデーションスキーマ
@@ -30,7 +31,7 @@ const uploadRequestSchema = z.object({
     .refine(file => file.size > 0, 'audioFileが空です')
     .refine(
       file => file.size <= MAX_FILE_SIZE,
-      `ファイルサイズが大きすぎます。最大${MAX_FILE_SIZE / 1024 / 1024}MBまでです`
+      `ファイルサイズが大きすぎます。現在は25MBまでのファイルのみサポートしています`
     )
     .refine(
       file => {
@@ -123,7 +124,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`音声ファイルアップロード: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
 
-    // 4. 会議レコードを作成
+    // 4. ファイルサイズ制限チェック（25MB）
+    // CRITICAL: splitAudioIntoChunksが未実装のため、25MB超は拒否
+    const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
+    if (audioFile.size > MAX_AUDIO_SIZE) {
+      return NextResponse.json(
+        {
+          error: '音声ファイルが大きすぎます',
+          details: `現在は25MBまでのファイルのみサポートしています。ファイルサイズ: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`,
+        },
+        { status: 413 } // Payload Too Large
+      );
+    }
+
+    // 5. 会議レコードを作成
     const meeting = await prisma.meeting.create({
       data: {
         userId,
@@ -185,44 +199,21 @@ async function processTranscriptionAsync(
       data: { processingProgress: 10 },
     });
 
-    // 1. Whisper APIで文字起こし
-    let results;
-    const maxFileSize = 25 * 1024 * 1024; // 25MB
+    // 1. Whisper APIで文字起こし（25MB以下のみサポート）
+    // 進捗: 25% - Whisper API呼び出し開始
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 25 },
+    });
 
-    if (audioFile.size > maxFileSize) {
-      // 25MB超の場合はチャンク分割
-      console.log(`[非同期処理] 音声ファイルが大きいため、チャンク分割処理を実行します (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
+    const result = await transcribeAudio(audioFile, { language });
+    const results = [result];
 
-      // 進捗: 20% - チャンク分割処理開始
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 20 },
-      });
-
-      results = await transcribeLongAudio(audioFile, { language });
-
-      // 進捗: 70% - 文字起こし完了
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 70 },
-      });
-    } else {
-      // 25MB以下の場合は通常の文字起こし
-      // 進捗: 25% - Whisper API呼び出し開始
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 25 },
-      });
-
-      const result = await transcribeAudio(audioFile, { language });
-      results = [result];
-
-      // 進捗: 70% - 文字起こし完了
-      await prisma.meeting.update({
-        where: { id: meetingId },
-        data: { processingProgress: 70 },
-      });
-    }
+    // 進捗: 70% - 文字起こし完了
+    await prisma.meeting.update({
+      where: { id: meetingId },
+      data: { processingProgress: 70 },
+    });
 
     // 2. 結果を統合
     const mergedResult = mergeTranscriptionResults(results);
