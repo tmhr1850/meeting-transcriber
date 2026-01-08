@@ -35,8 +35,21 @@ const transcriptionRequestSchema = z.object({
  * 音声ファイルを文字起こしし、データベースに保存します。
  *
  * 認証必須、会議の所有者のみアクセス可能
+ *
+ * ⚠️ **TODO: レート制限の実装**
+ * DoS攻撃を防ぐため、本番環境では必ずレート制限を実装してください。
+ * 推奨ライブラリ: @upstash/ratelimit, @vercel/edge
  */
 export async function POST(request: NextRequest) {
+  // TODO: レート制限の実装
+  // 例: @upstash/ratelimit を使用
+  // const ratelimit = new Ratelimit({
+  //   redis: Redis.fromEnv(),
+  //   limiter: Ratelimit.slidingWindow(5, "1 h"), // 1時間に5リクエスト
+  // });
+  // const { success } = await ratelimit.limit(session.user.id);
+  // if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+
   // エラーハンドリング用にスコープ外で宣言
   let meetingId: string | null = null;
 
@@ -176,11 +189,19 @@ export async function POST(request: NextRequest) {
         chunkIndex: index,
       }));
 
-      await prisma.transcriptSegment.createMany({
-        data: segmentsToCreate,
-      });
+      // パフォーマンス最適化: 500件ずつバッチ処理
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < segmentsToCreate.length; i += BATCH_SIZE) {
+        const batch = segmentsToCreate.slice(i, i + BATCH_SIZE);
+        await prisma.transcriptSegment.createMany({
+          data: batch,
+        });
+        console.log(
+          `バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(segmentsToCreate.length / BATCH_SIZE)}: ${batch.length}個のセグメントを保存`
+        );
+      }
 
-      console.log(`${segmentsToCreate.length}個のセグメントをデータベースに保存しました`);
+      console.log(`合計 ${segmentsToCreate.length}個のセグメントをデータベースに保存しました`);
     }
 
     // 9. 会議情報を更新（ステータス、時間）

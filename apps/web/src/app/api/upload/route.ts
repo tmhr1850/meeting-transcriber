@@ -19,12 +19,19 @@ import { auth } from '@/lib/auth';
 import { prisma, type Platform, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
 
+// セキュリティ: ファイルサイズ上限（100MB）
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
 /**
  * リクエストボディのバリデーションスキーマ
  */
 const uploadRequestSchema = z.object({
   audioFile: z.instanceof(File, { message: 'audioFileは必須です' })
     .refine(file => file.size > 0, 'audioFileが空です')
+    .refine(
+      file => file.size <= MAX_FILE_SIZE,
+      `ファイルサイズが大きすぎます。最大${MAX_FILE_SIZE / 1024 / 1024}MBまでです`
+    )
     .refine(
       file => {
         const supportedFormats = ['audio/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg'];
@@ -56,13 +63,27 @@ const uploadRequestSchema = z.object({
  *    - fire-and-forgetパターンのため、エラー追跡が困難
  *    - リトライ機能が実装されていません
  *
- * 3. **推奨対応**
+ * 3. **レート制限が未実装**
+ *    - DoS攻撃のリスクがあります
+ *    - 本番環境では必ずレート制限を実装してください
+ *    - 推奨ライブラリ: @upstash/ratelimit, @vercel/edge
+ *
+ * 4. **推奨対応**
  *    本番デプロイ前に必ずバックグラウンドジョブキューを導入してください:
  *    - **Inngest** (推奨): Next.jsと統合が簡単、無料プランあり
  *    - **BullMQ**: Redis必須だが高機能
  *    - **Trigger.dev**: 開発者体験が良い
  */
 export async function POST(request: NextRequest) {
+  // TODO: レート制限の実装
+  // 例: @upstash/ratelimit を使用
+  // const ratelimit = new Ratelimit({
+  //   redis: Redis.fromEnv(),
+  //   limiter: Ratelimit.slidingWindow(10, "1 h"), // 1時間に10リクエスト
+  // });
+  // const { success } = await ratelimit.limit(session.user.id);
+  // if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+
   try {
     // 1. 認証チェック
     const session = await auth();
@@ -226,11 +247,19 @@ async function processTranscriptionAsync(
         chunkIndex: index,
       }));
 
-      await prisma.transcriptSegment.createMany({
-        data: segmentsToCreate,
-      });
+      // パフォーマンス最適化: 500件ずつバッチ処理
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < segmentsToCreate.length; i += BATCH_SIZE) {
+        const batch = segmentsToCreate.slice(i, i + BATCH_SIZE);
+        await prisma.transcriptSegment.createMany({
+          data: batch,
+        });
+        console.log(
+          `[非同期処理] バッチ ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(segmentsToCreate.length / BATCH_SIZE)}: ${batch.length}個のセグメントを保存`
+        );
+      }
 
-      console.log(`[非同期処理] ${segmentsToCreate.length}個のセグメントをデータベースに保存しました`);
+      console.log(`[非同期処理] 合計 ${segmentsToCreate.length}個のセグメントをデータベースに保存しました`);
     }
 
     // 4. 会議情報を更新（ステータス、時間）
