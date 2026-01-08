@@ -150,17 +150,18 @@ export async function POST(request: NextRequest) {
 
     console.log(`会議レコードを作成しました: ${meeting.id}`);
 
-    // 5. 非同期で文字起こし処理を開始
-    // NOTE: Next.jsのAPIルートでは長時間処理は推奨されないため、
-    // 本番環境ではバックグラウンドジョブキュー（BullMQ、Inngest等）の使用を推奨
-    processTranscriptionAsync(meeting.id, audioFile, language);
+    // 5. 文字起こし処理を実行
+    // CRITICAL: 25MBに制限したため、awaitして同期実行
+    // NOTE: Vercelのタイムアウト制限に注意（無料: 10秒、Pro: 60秒）
+    // 本番環境ではバックグラウンドジョブキュー（Inngest、BullMQ等）の使用を推奨
+    await processTranscriptionAsync(meeting.id, audioFile, language);
 
-    // 6. レスポンス（即座に返却）
+    // 6. レスポンス（処理完了後に返却）
     return NextResponse.json({
       success: true,
       meetingId: meeting.id,
-      status: 'processing',
-      message: '音声ファイルのアップロードが完了しました。文字起こし処理を開始します。',
+      status: 'completed',
+      message: '音声ファイルのアップロードと文字起こしが完了しました。',
     });
 
   } catch (error) {
@@ -169,7 +170,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'アップロード処理に失敗しました',
-        details: error instanceof Error ? error.message : '不明なエラー',
+        details:
+          process.env.NODE_ENV === 'production'
+            ? '処理中にエラーが発生しました。しばらく経ってから再度お試しください。'
+            : error instanceof Error
+            ? error.message
+            : '不明なエラー',
       },
       { status: 500 }
     );
@@ -281,5 +287,8 @@ async function processTranscriptionAsync(
     } catch (updateError) {
       console.error('[非同期処理] ステータス更新エラー:', updateError);
     }
+
+    // エラーを再スローして、呼び出し元で処理できるようにする
+    throw error;
   }
 }
