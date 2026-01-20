@@ -47,6 +47,12 @@ export default defineManifest({
       css: ['src/content/shared/styles.css'],
       run_at: 'document_idle',
     },
+    {
+      matches: ['https://teams.microsoft.com/*', 'https://teams.live.com/*'],
+      js: ['src/content/teams/index.ts'],
+      css: ['src/content/shared/styles.css'],
+      run_at: 'document_start',
+    },
   ],
 
   icons: {
