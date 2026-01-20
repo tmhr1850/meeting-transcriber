@@ -250,11 +250,20 @@ export async function checkRateLimit(
   } catch (error) {
     // エラーが発生した場合は、リクエストを許可する（フェイルオープン）
     console.error('レート制限チェック中にエラーが発生しました:', error);
+
+    // フェイルオープン時のデフォルトリセット時間（1時間後）
+    let resetTime = Date.now() + 3600000; // 1時間
+    try {
+      resetTime = Date.now() + parseWindow(window);
+    } catch {
+      // parseWindowでもエラーが発生した場合はデフォルト値を使用
+    }
+
     return {
       success: true,
       limit,
       remaining: limit,
-      reset: Date.now() + parseWindow(window),
+      reset: resetTime,
     };
   }
 }
