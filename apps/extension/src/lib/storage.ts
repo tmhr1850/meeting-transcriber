@@ -8,7 +8,6 @@ const STORAGE_KEYS = {
   USER: 'user',
   AUTH_TOKEN: 'authToken',
   SETTINGS: 'settings',
-  CURRENT_MEETING: 'currentMeeting',
 } as const;
 
 /**
@@ -100,10 +99,11 @@ export async function setUser(user: User | null): Promise<void> {
 /**
  * 認証トークンを取得
  * @returns 認証トークン（存在しない場合はnull）
+ * @remarks セキュリティのためchrome.storage.sessionを使用（メモリ内保存、ブラウザ再起動でクリア）
  */
 export async function getAuthToken(): Promise<string | null> {
   try {
-    const result = await chrome.storage.local.get(STORAGE_KEYS.AUTH_TOKEN);
+    const result = await chrome.storage.session.get(STORAGE_KEYS.AUTH_TOKEN);
     return result[STORAGE_KEYS.AUTH_TOKEN] || null;
   } catch (error) {
     console.error('[Storage] 認証トークンの取得に失敗:', error);
@@ -114,13 +114,14 @@ export async function getAuthToken(): Promise<string | null> {
 /**
  * 認証トークンを保存または削除
  * @param token - 認証トークン（nullの場合は削除）
+ * @remarks セキュリティのためchrome.storage.sessionを使用（メモリ内保存、ブラウザ再起動でクリア）
  */
 export async function setAuthToken(token: string | null): Promise<void> {
   try {
     if (token) {
-      await chrome.storage.local.set({ [STORAGE_KEYS.AUTH_TOKEN]: token });
+      await chrome.storage.session.set({ [STORAGE_KEYS.AUTH_TOKEN]: token });
     } else {
-      await chrome.storage.local.remove(STORAGE_KEYS.AUTH_TOKEN);
+      await chrome.storage.session.remove(STORAGE_KEYS.AUTH_TOKEN);
     }
   } catch (error) {
     console.error('[Storage] 認証トークンの保存に失敗:', error);
@@ -166,9 +167,20 @@ export async function getSettings(): Promise<Settings> {
 /**
  * 設定を更新（部分更新）
  * @param settings - 更新する設定の一部
+ * @throws バリデーションエラーが発生した場合
  */
 export async function setSettings(settings: Partial<Settings>): Promise<void> {
   try {
+    // バリデーション
+    if (settings.chunkDuration !== undefined) {
+      if (settings.chunkDuration < 1000) {
+        throw new Error('chunkDurationは1000ms以上である必要があります');
+      }
+      if (settings.chunkDuration > 60000) {
+        throw new Error('chunkDurationは60000ms以下である必要があります');
+      }
+    }
+
     const current = await getSettings();
     const newSettings = { ...current, ...settings };
     await chrome.storage.sync.set({
@@ -184,16 +196,28 @@ export async function setSettings(settings: Partial<Settings>): Promise<void> {
  * 状態変更リスナーを登録
  * @param callback - 状態変更時に呼ばれるコールバック関数
  * @returns リスナーを解除する関数
+ * @example
+ * const unsubscribe = onStateChange((newState, oldState) => {
+ *   console.log('State changed:', newState);
+ * });
+ * // 使用後は必ず解除
+ * unsubscribe();
  */
 export function onStateChange(
   callback: (newState: ExtensionState, oldState: ExtensionState) => void
 ): () => void {
-  const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+  const listener = (
+    changes: { [key: string]: chrome.storage.StorageChange },
+    areaName: 'local' | 'sync' | 'session'
+  ) => {
+    // localストレージの変更のみ処理
+    if (areaName !== 'local') return;
+
     if (STORAGE_KEYS.STATE in changes) {
       const change = changes[STORAGE_KEYS.STATE];
       callback(
-        change.newValue || initialState,
-        change.oldValue || initialState
+        change.newValue ?? initialState,
+        change.oldValue ?? initialState
       );
     }
   };
@@ -210,16 +234,28 @@ export function onStateChange(
  * ユーザー情報変更リスナーを登録
  * @param callback - ユーザー情報変更時に呼ばれるコールバック関数
  * @returns リスナーを解除する関数
+ * @example
+ * const unsubscribe = onUserChange((newUser, oldUser) => {
+ *   console.log('User changed:', newUser);
+ * });
+ * // 使用後は必ず解除
+ * unsubscribe();
  */
 export function onUserChange(
   callback: (newUser: User | null, oldUser: User | null) => void
 ): () => void {
-  const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+  const listener = (
+    changes: { [key: string]: chrome.storage.StorageChange },
+    areaName: 'local' | 'sync' | 'session'
+  ) => {
+    // localストレージの変更のみ処理
+    if (areaName !== 'local') return;
+
     if (STORAGE_KEYS.USER in changes) {
       const change = changes[STORAGE_KEYS.USER];
       callback(
-        change.newValue || null,
-        change.oldValue || null
+        change.newValue ?? null,
+        change.oldValue ?? null
       );
     }
   };
@@ -235,16 +271,28 @@ export function onUserChange(
  * 設定変更リスナーを登録
  * @param callback - 設定変更時に呼ばれるコールバック関数
  * @returns リスナーを解除する関数
+ * @example
+ * const unsubscribe = onSettingsChange((newSettings, oldSettings) => {
+ *   console.log('Settings changed:', newSettings);
+ * });
+ * // 使用後は必ず解除
+ * unsubscribe();
  */
 export function onSettingsChange(
   callback: (newSettings: Settings, oldSettings: Settings) => void
 ): () => void {
-  const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+  const listener = (
+    changes: { [key: string]: chrome.storage.StorageChange },
+    areaName: 'local' | 'sync' | 'session'
+  ) => {
+    // syncストレージの変更のみ処理
+    if (areaName !== 'sync') return;
+
     if (STORAGE_KEYS.SETTINGS in changes) {
       const change = changes[STORAGE_KEYS.SETTINGS];
       callback(
-        { ...defaultSettings, ...change.newValue },
-        { ...defaultSettings, ...change.oldValue }
+        { ...defaultSettings, ...(change.newValue ?? {}) },
+        { ...defaultSettings, ...(change.oldValue ?? {}) }
       );
     }
   };
