@@ -84,6 +84,30 @@ export type ExtensionMessage =
   // Side Panel -> Content Script: Side Panelからの録音開始リクエスト
   | {
       type: 'START_RECORDING_FROM_SIDEPANEL';
+    }
+  // Background -> Side Panel: 録音状態更新通知
+  | {
+      type: 'RECORDING_STATE_UPDATE';
+      isRecording: boolean;
+      meetingId?: string;
+    }
+  // Background -> Side Panel: 経過時間更新通知
+  | {
+      type: 'DURATION_UPDATE';
+      duration: number; // 録音開始からの秒数
+    }
+  // Side Panel -> Background: AIクエリ
+  | {
+      type: 'AI_QUERY';
+      query: string;
+      segmentIds: string[]; // コンテキストとして使用するセグメントIDのリスト
+      meetingId: string;
+    }
+  // Background -> Side Panel: AI応答
+  | {
+      type: 'AI_RESPONSE';
+      response: string;
+      query: string;
     };
 
 /**
@@ -96,4 +120,6 @@ export type ExtensionMessageResponse<T extends ExtensionMessage = ExtensionMessa
     ? { success: boolean; error?: string }
     : T extends { type: 'TRANSCRIPT_RECEIVED' } | { type: 'TRANSCRIPT_UPDATE' }
     ? { success: boolean }
+    : T extends { type: 'AI_QUERY' }
+    ? { success: boolean; error?: string }
     : { success: boolean; error?: string };

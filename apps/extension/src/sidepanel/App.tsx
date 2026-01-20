@@ -10,37 +10,58 @@ import {
   Input,
   ScrollArea,
 } from '@meeting-transcriber/ui';
+import type {
+  TranscriptSegment,
+  ExtensionMessage,
+  ExtensionMessageResponse,
+} from '@meeting-transcriber/shared';
 
 /**
- * トランスクリプトのセグメント型定義
+ * Side Panel表示用のセグメント
  */
-interface Segment {
+interface DisplaySegment {
   id: string;
   speaker: string;
   text: string;
-  timestamp: string;
+  timestamp: string; // "HH:MM:SS"形式の表示用タイムスタンプ
 }
 
 /**
- * Chrome拡張機能からのメッセージ型定義
+ * セグメントの最大保持数（メモリリーク対策）
  */
-interface ChromeMessage {
-  type:
-    | 'RECORDING_STATE'
-    | 'TRANSCRIPTION_RESULT'
-    | 'DURATION_UPDATE'
-    | 'AI_RESPONSE';
-  isRecording?: boolean;
-  segment?: Segment;
-  duration?: number;
-  response?: string;
-}
+const MAX_SEGMENTS = 1000;
+
+/**
+ * AIクエリのコンテキスト制限（直近N件のセグメントのみ）
+ */
+const CONTEXT_LIMIT = 50;
+
+/**
+ * TranscriptSegmentをDisplaySegmentに変換
+ * @param segment - 文字起こしセグメント
+ * @returns 表示用セグメント
+ */
+const toDisplaySegment = (segment: TranscriptSegment): DisplaySegment => {
+  const elapsedSeconds = Math.floor(segment.startTime / 1000);
+  const h = Math.floor(elapsedSeconds / 3600);
+  const m = Math.floor((elapsedSeconds % 3600) / 60);
+  const s = elapsedSeconds % 60;
+
+  return {
+    id: segment.id,
+    speaker: segment.speakerName || '不明',
+    text: segment.text,
+    timestamp: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`,
+  };
+};
 
 export function App() {
   const [isRecording, setIsRecording] = useState(false);
-  const [segments, setSegments] = useState<Segment[]>([]);
+  const [segments, setSegments] = useState<DisplaySegment[]>([]);
   const [duration, setDuration] = useState(0);
   const [aiQuery, setAiQuery] = useState('');
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -54,29 +75,49 @@ export function App() {
   };
 
   /**
+   * 新しいセグメントが追加されたら自動スクロール
+   */
+  useEffect(() => {
+    scrollToBottom();
+  }, [segments]);
+
+  /**
    * Chrome拡張機能からのメッセージリスナー
    * リアルタイムで録音状態、文字起こし結果、経過時間を受信
    */
   useEffect(() => {
-    const listener = (message: ChromeMessage) => {
+    const listener = (message: ExtensionMessage) => {
       switch (message.type) {
-        case 'RECORDING_STATE':
-          if (message.isRecording !== undefined) {
-            setIsRecording(message.isRecording);
+        case 'RECORDING_STATE_UPDATE':
+          setIsRecording(message.isRecording);
+          if (message.meetingId) {
+            setCurrentMeetingId(message.meetingId);
+          }
+          // 録音停止時にセグメントとdurationをクリア
+          if (!message.isRecording) {
+            setSegments([]);
+            setDuration(0);
+            setCurrentMeetingId(null);
           }
           break;
-        case 'TRANSCRIPTION_RESULT':
-          if (message.segment) {
-            setSegments((prev) => [...prev, message.segment]);
-            // 新しいセグメントが追加されたら自動スクロール
-            setTimeout(scrollToBottom, 100);
+
+        case 'TRANSCRIPT_UPDATE':
+          if (message.data?.segment) {
+            const displaySegment = toDisplaySegment(message.data.segment);
+            setSegments((prev) => {
+              const updated = [...prev, displaySegment];
+              // メモリリーク対策: 最大保持数を超えたら古いセグメントを削除
+              return updated.length > MAX_SEGMENTS
+                ? updated.slice(-MAX_SEGMENTS)
+                : updated;
+            });
           }
           break;
+
         case 'DURATION_UPDATE':
-          if (message.duration !== undefined) {
-            setDuration(message.duration);
-          }
+          setDuration(message.duration);
           break;
+
         case 'AI_RESPONSE':
           // AI応答は別途処理（将来的に実装）
           if (import.meta.env.DEV) {
@@ -92,11 +133,27 @@ export function App() {
 
   /**
    * 録音開始/停止ボタンのハンドラ
+   * エラーハンドリングとローディング状態を含む
    */
-  const toggleRecording = () => {
-    chrome.runtime.sendMessage({
-      type: isRecording ? 'STOP_CAPTURE' : 'START_CAPTURE',
-    });
+  const toggleRecording = async () => {
+    setIsLoading(true);
+    try {
+      const message: ExtensionMessage = isRecording
+        ? { type: 'STOP_RECORDING' }
+        : { type: 'START_RECORDING_FROM_SIDEPANEL' };
+
+      const response = await chrome.runtime.sendMessage(message);
+
+      if (response && !response.success) {
+        console.error('録音操作に失敗:', response.error);
+        // TODO: ユーザーにエラー通知（トースト等）
+      }
+    } catch (error) {
+      console.error('メッセージ送信エラー:', error);
+      // TODO: ユーザーにエラー通知
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   /**
@@ -113,16 +170,36 @@ export function App() {
 
   /**
    * AIクエリ送信ハンドラ
+   * コンテキストサイズを制限し、エラーハンドリングを含む
    */
-  const handleAiQuery = () => {
-    if (aiQuery.trim() === '') return;
+  const handleAiQuery = async () => {
+    if (aiQuery.trim() === '' || !currentMeetingId) return;
 
-    chrome.runtime.sendMessage({
-      type: 'AI_QUERY',
-      query: aiQuery,
-      context: segments,
-    });
-    setAiQuery('');
+    try {
+      // 直近CONTEXT_LIMIT件のセグメントIDのみを送信
+      const recentSegmentIds = segments
+        .slice(-CONTEXT_LIMIT)
+        .map((seg) => seg.id);
+
+      const message: ExtensionMessage = {
+        type: 'AI_QUERY',
+        query: aiQuery,
+        segmentIds: recentSegmentIds,
+        meetingId: currentMeetingId,
+      };
+
+      const response = await chrome.runtime.sendMessage(message);
+
+      if (response && !response.success) {
+        console.error('AIクエリ送信に失敗:', response.error);
+        // TODO: ユーザーにエラー通知
+      } else {
+        setAiQuery('');
+      }
+    } catch (error) {
+      console.error('AIクエリ送信エラー:', error);
+      // TODO: ユーザーにエラー通知
+    }
   };
 
   /**
@@ -148,10 +225,15 @@ export function App() {
       <div className="p-3 border-b flex items-center gap-2 bg-card">
         <Button
           onClick={toggleRecording}
+          disabled={isLoading}
           variant={isRecording ? 'destructive' : 'default'}
           aria-label={isRecording ? '録音を停止' : '録音を開始'}
         >
-          {isRecording ? '⏹ 停止' : '🎙 録音開始'}
+          {isLoading
+            ? '⏳ 処理中...'
+            : isRecording
+            ? '⏹ 停止'
+            : '🎙 録音開始'}
         </Button>
         {isRecording && (
           <span className="text-sm text-muted-foreground">
@@ -188,8 +270,13 @@ export function App() {
           onKeyDown={handleKeyDown}
           placeholder="🤖 AIに聞く..."
           aria-label="AIクエリ入力"
+          disabled={!currentMeetingId || segments.length === 0}
         />
-        <Button onClick={handleAiQuery} aria-label="クエリ送信">
+        <Button
+          onClick={handleAiQuery}
+          aria-label="クエリ送信"
+          disabled={!currentMeetingId || segments.length === 0 || aiQuery.trim() === ''}
+        >
           送信
         </Button>
       </div>
