@@ -34,6 +34,12 @@ export interface RateLimitResult {
  */
 class InMemoryRateLimiter {
   private cache = new Map<string, { count: number; resetTime: number }>();
+  private cleanupInterval: NodeJS.Timeout;
+
+  constructor() {
+    // 10分ごとに期限切れエントリをクリーンアップ
+    this.cleanupInterval = setInterval(() => this.cleanup(), 10 * 60 * 1000);
+  }
 
   /**
    * レート制限をチェック
@@ -93,23 +99,36 @@ class InMemoryRateLimiter {
       }
     }
   }
+
+  /**
+   * クリーンアップタイマーを停止（テスト用）
+   */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+  }
 }
 
 // Upstash Redisの設定確認とレート制限インスタンスの初期化
 let rateLimiter: Ratelimit | InMemoryRateLimiter;
+// Ratelimitインスタンスのキャッシュ（メモリリーク対策）
+const rateLimiterCache = new Map<string, Ratelimit>();
+// 共有Redis接続（接続プーリング）
+let sharedRedis: Redis | null = null;
 
 if (
   process.env.UPSTASH_REDIS_REST_URL &&
   process.env.UPSTASH_REDIS_REST_TOKEN
 ) {
   // 本番環境: Upstash Redisを使用
-  const redis = new Redis({
+  sharedRedis = new Redis({
     url: process.env.UPSTASH_REDIS_REST_URL,
     token: process.env.UPSTASH_REDIS_REST_TOKEN,
   });
 
   rateLimiter = new Ratelimit({
-    redis,
+    redis: sharedRedis,
     // デフォルトのレート制限（後で上書き可能）
     limiter: Ratelimit.slidingWindow(10, '1 h'),
     analytics: true,
@@ -126,6 +145,37 @@ if (
     '   設定方法: UPSTASH_REDIS_REST_URLとUPSTASH_REDIS_REST_TOKENを環境変数に設定してください'
   );
   rateLimiter = new InMemoryRateLimiter();
+}
+
+/**
+ * Ratelimitインスタンスを取得（キャッシュ機能付き）
+ *
+ * メモリリークを防ぐため、limit/windowの組み合わせごとにインスタンスをキャッシュします。
+ *
+ * @param limit - 制限の上限値
+ * @param window - ウィンドウ時間
+ * @returns Ratelimitインスタンス
+ */
+function getRateLimiter(limit: number, window: string): Ratelimit {
+  const key = `${limit}:${window}`;
+
+  if (!rateLimiterCache.has(key)) {
+    if (!sharedRedis) {
+      throw new Error('Upstash Redis is not initialized');
+    }
+
+    rateLimiterCache.set(key, new Ratelimit({
+      redis: sharedRedis,
+      limiter: Ratelimit.slidingWindow(
+        limit,
+        window as `${number} ms` | `${number} s` | `${number} m` | `${number} h` | `${number} d`
+      ),
+      analytics: true,
+      prefix: 'meeting-transcriber',
+    }));
+  }
+
+  return rateLimiterCache.get(key)!;
 }
 
 /**
@@ -191,19 +241,9 @@ export async function checkRateLimit(
       const windowMs = parseWindow(window);
       return await rateLimiter.limit(identifier, limit, windowMs);
     } else {
-      // Upstash Ratelimitの場合は、カスタム設定で新しいインスタンスを作成
-      const redis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-      });
-
-      const customRateLimiter = new Ratelimit({
-        redis,
-        limiter: Ratelimit.slidingWindow(limit, window as `${number} ms` | `${number} s` | `${number} m` | `${number} h` | `${number} d`),
-        analytics: true,
-        prefix: 'meeting-transcriber',
-      });
-
+      // Upstash Ratelimitの場合は、キャッシュされたインスタンスを使用
+      // メモリリーク対策: 毎回新しいインスタンスを作成せず、再利用する
+      const customRateLimiter = getRateLimiter(limit, window);
       const result = await customRateLimiter.limit(identifier);
 
       return {
