@@ -143,6 +143,24 @@ export type ExtensionMessage =
       type: 'AI_RESPONSE';
       response: string;
       query: string;
+    }
+  // Content Script -> Background: 会議検出通知
+  | {
+      type: 'MEETING_DETECTED';
+      payload: {
+        platform: Platform;
+        url: string;
+        title?: string;
+      };
+    }
+  // Content Script -> Background: 会議終了通知
+  | {
+      type: 'MEETING_ENDED';
+      payload: {
+        platform: Platform;
+        url: string;
+        title?: string;
+      };
     };
 
 /**
