@@ -51,3 +51,54 @@ export interface TranscriptionResponse {
   /** 信頼度 (0.0-1.0) */
   confidence?: number;
 }
+
+/**
+ * 要約生成リクエスト
+ */
+export interface GenerateSummaryRequest {
+  /** 強制的に再生成するか */
+  force?: boolean;
+}
+
+/**
+ * 要約生成レスポンス
+ */
+export interface GenerateSummaryResponse {
+  /** 要約データ */
+  summary: {
+    /** 要約文 */
+    summary: string;
+    /** キーポイント */
+    keyPoints: string[];
+    /** アクションアイテム */
+    actionItems: Array<{
+      task: string;
+      assignee?: string;
+      dueDate?: string;
+    }>;
+    /** 決定事項 */
+    decisions: string[];
+    /** 次のステップ */
+    nextSteps: string[];
+  };
+  /** 生成日時 */
+  generatedAt: string;
+}
+
+/**
+ * カスタムプロンプトリクエスト
+ */
+export interface CustomPromptRequest {
+  /** ユーザーの質問 */
+  question: string;
+}
+
+/**
+ * カスタムプロンプトレスポンス
+ */
+export interface CustomPromptResponse {
+  /** AIの回答 */
+  answer: string;
+  /** 処理日時 */
+  processedAt: string;
+}
