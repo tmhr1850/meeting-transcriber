@@ -47,6 +47,11 @@ export default defineManifest({
       css: ['src/content/shared/styles.css'],
       run_at: 'document_idle',
     },
+    {
+      matches: ['https://*.zoom.us/wc/*', 'https://*.zoom.us/j/*'],
+      js: ['src/content/zoom/index.ts'],
+      run_at: 'document_start',
+    },
   ],
 
   icons: {
