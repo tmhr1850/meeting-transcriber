@@ -1,5 +1,6 @@
 import type { Platform } from '../constants/platforms';
 import type { TranscriptSegment } from './transcript';
+import type { Meeting } from './meeting';
 
 /**
  * 会議情報（Content Scriptから取得）
@@ -27,6 +28,20 @@ export interface RecordingState {
   currentTabId: number | null;
   /** 録音開始時刻（タイムスタンプ） */
   startTime: number | null;
+}
+
+/**
+ * Chrome拡張の状態管理用インターフェース
+ */
+export interface ExtensionState {
+  /** 録音中かどうか */
+  isRecording: boolean;
+  /** 現在録音中のタブID */
+  currentTabId: number | null;
+  /** 現在の会議情報 */
+  currentMeeting: Meeting | null;
+  /** 録音開始時刻（タイムスタンプ） */
+  recordingStartedAt: number | null;
 }
 
 /**
