@@ -3,12 +3,13 @@
  * 会議ページで録音ボタンを表示し、リアルタイム文字起こしを行う
  */
 
-import type { ExtensionMessage, MeetingInfo, TranscriptUpdateData } from '@meeting-transcriber/shared';
+import type { ExtensionMessage, ExtensionMessageResponse, MeetingInfo, TranscriptUpdateData } from '@meeting-transcriber/shared';
 
 class GoogleMeetTranscriber {
   private isTranscribing = false;
   private overlay: HTMLElement | null = null;
   private controlButton: HTMLElement | null = null;
+  private eventHandlers: Map<HTMLElement, EventListener> = new Map();
 
   constructor() {
     this.init();
@@ -25,7 +26,7 @@ class GoogleMeetTranscriber {
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
 
     if (import.meta.env.DEV) {
-      console.log('[Meeting Transcriber] Initialized on Google Meet');
+      console.log('[MeetingTranscriber] Initialized on Google Meet');
     }
   }
 
@@ -34,16 +35,27 @@ class GoogleMeetTranscriber {
    */
   private waitForMeetingReady(): Promise<void> {
     return new Promise((resolve) => {
-      let timeoutId: NodeJS.Timeout | null = null;
+      let timeoutId: number | null = null;
+      let observer: MutationObserver | null = null;
 
-      const observer = new MutationObserver((mutations, obs) => {
+      const cleanup = () => {
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+        }
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      observer = new MutationObserver(() => {
         // Google Meet固有の要素を検出
         const controlsBar = document.querySelector('[data-is-muted]');
         const meetingContainer = document.querySelector('[data-meeting-code]');
 
         if (controlsBar || meetingContainer) {
-          obs.disconnect();
-          if (timeoutId) clearTimeout(timeoutId);
+          cleanup();
           resolve();
         }
       });
@@ -54,8 +66,8 @@ class GoogleMeetTranscriber {
       });
 
       // タイムアウト（30秒）
-      timeoutId = setTimeout(() => {
-        observer.disconnect();
+      timeoutId = window.setTimeout(() => {
+        cleanup();
         resolve();
       }, 30000);
     });
@@ -65,8 +77,115 @@ class GoogleMeetTranscriber {
    * UIコンポーネントを注入
    */
   private injectUI() {
+    this.injectStyles();
     this.injectControlButton();
     this.createTranscriptOverlay();
+  }
+
+  /**
+   * グローバルスタイルを注入
+   */
+  private injectStyles() {
+    if (document.getElementById('mt-global-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'mt-global-styles';
+    style.textContent = `
+      /* コントロールボタン */
+      #mt-control-button {
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10000;
+      }
+      .mt-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        background: #7c3aed;
+        color: white;
+        border: none;
+        border-radius: 24px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+        transition: all 0.2s;
+      }
+      .mt-btn:hover {
+        background: #6d28d9;
+        transform: scale(1.05);
+      }
+      .mt-btn.recording {
+        background: #dc2626;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+        50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+      }
+
+      /* オーバーレイ */
+      #mt-transcript-overlay {
+        position: fixed;
+        right: 20px;
+        bottom: 100px;
+        width: 400px;
+        max-height: 300px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        z-index: 10000;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #mt-transcript-overlay.visible {
+        display: flex;
+      }
+      .mt-overlay-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        background: #7c3aed;
+        color: white;
+        font-weight: 500;
+      }
+      .mt-overlay-header button {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+      }
+      #mt-transcript-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .mt-segment {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #eee;
+      }
+      .mt-segment:last-child {
+        border-bottom: none;
+      }
+      .mt-timestamp {
+        font-size: 12px;
+        color: #888;
+        margin-bottom: 4px;
+      }
+      .mt-text {
+        color: #333;
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   /**
@@ -91,56 +210,16 @@ class GoogleMeetTranscriber {
       </button>
     `;
 
-    // スタイル（重複対策でIDをチェック）
-    if (!document.getElementById('mt-control-button-styles')) {
-      const style = document.createElement('style');
-      style.id = 'mt-control-button-styles';
-      style.textContent = `
-        #mt-control-button {
-          position: fixed;
-          bottom: 80px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 10000;
-        }
-        .mt-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 12px 20px;
-          background: #7c3aed;
-          color: white;
-          border: none;
-          border-radius: 24px;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
-          transition: all 0.2s;
-        }
-        .mt-btn:hover {
-          background: #6d28d9;
-          transform: scale(1.05);
-        }
-        .mt-btn.recording {
-          background: #dc2626;
-          animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
-          50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
     document.body.appendChild(button);
     this.controlButton = button;
 
-    // イベントリスナー
-    document.getElementById('mt-toggle-btn')?.addEventListener('click', () => {
-      this.toggleTranscription();
-    });
+    // イベントリスナー（メモリリーク対策）
+    const toggleBtn = document.getElementById('mt-toggle-btn');
+    if (toggleBtn) {
+      const handler = () => this.toggleTranscription();
+      toggleBtn.addEventListener('click', handler);
+      this.eventHandlers.set(toggleBtn as HTMLElement, handler);
+    }
   }
 
   /**
@@ -161,77 +240,15 @@ class GoogleMeetTranscriber {
       <div id="mt-transcript-content"></div>
     `;
 
-    // スタイル（重複対策でIDをチェック）
-    if (!document.getElementById('mt-transcript-overlay-styles')) {
-      const style = document.createElement('style');
-      style.id = 'mt-transcript-overlay-styles';
-      style.textContent = `
-        #mt-transcript-overlay {
-          position: fixed;
-          right: 20px;
-          bottom: 100px;
-          width: 400px;
-          max-height: 300px;
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-          z-index: 10000;
-          display: none;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        #mt-transcript-overlay.visible {
-          display: flex;
-        }
-        .mt-overlay-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 12px 16px;
-          background: #7c3aed;
-          color: white;
-          font-weight: 500;
-        }
-        .mt-overlay-header button {
-          background: none;
-          border: none;
-          color: white;
-          font-size: 20px;
-          cursor: pointer;
-        }
-        #mt-transcript-content {
-          flex: 1;
-          overflow-y: auto;
-          padding: 16px;
-          font-size: 14px;
-          line-height: 1.6;
-        }
-        .mt-segment {
-          margin-bottom: 12px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid #eee;
-        }
-        .mt-segment:last-child {
-          border-bottom: none;
-        }
-        .mt-timestamp {
-          font-size: 12px;
-          color: #888;
-          margin-bottom: 4px;
-        }
-        .mt-text {
-          color: #333;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
     document.body.appendChild(this.overlay);
 
-    // 閉じるボタン
-    document.getElementById('mt-overlay-close')?.addEventListener('click', () => {
-      this.overlay?.classList.remove('visible');
-    });
+    // 閉じるボタン（メモリリーク対策）
+    const closeBtn = document.getElementById('mt-overlay-close');
+    if (closeBtn) {
+      const handler = () => this.overlay?.classList.remove('visible');
+      closeBtn.addEventListener('click', handler);
+      this.eventHandlers.set(closeBtn as HTMLElement, handler);
+    }
   }
 
   /**
@@ -263,18 +280,18 @@ class GoogleMeetTranscriber {
         this.overlay?.classList.add('visible');
 
         if (import.meta.env.DEV) {
-          console.log('Recording started successfully');
+          console.log('[MeetingTranscriber] Recording started successfully');
         }
       } else {
         const errorMsg = response?.error || '録音の開始に失敗しました';
         if (import.meta.env.DEV) {
-          console.error('Failed to start:', errorMsg);
+          console.error('[MeetingTranscriber] Failed to start:', errorMsg);
         }
         alert(errorMsg);
       }
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error('Error starting transcription:', error);
+        console.error('[MeetingTranscriber] Error starting transcription:', error);
       }
       alert('録音の開始に失敗しました: ' + String(error));
     }
@@ -294,18 +311,18 @@ class GoogleMeetTranscriber {
         this.updateButtonState();
 
         if (import.meta.env.DEV) {
-          console.log('Recording stopped successfully');
+          console.log('[MeetingTranscriber] Recording stopped successfully');
         }
       } else {
         const errorMsg = response?.error || '録音の停止に失敗しました';
         if (import.meta.env.DEV) {
-          console.error('Failed to stop:', errorMsg);
+          console.error('[MeetingTranscriber] Failed to stop:', errorMsg);
         }
         alert(errorMsg);
       }
     } catch (error) {
       if (import.meta.env.DEV) {
-        console.error('Error stopping transcription:', error);
+        console.error('[MeetingTranscriber] Error stopping transcription:', error);
       }
       alert('録音の停止に失敗しました: ' + String(error));
     }
@@ -355,7 +372,11 @@ class GoogleMeetTranscriber {
   /**
    * メッセージハンドラー
    */
-  private handleMessage(message: ExtensionMessage, sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void): boolean {
+  private handleMessage(
+    message: ExtensionMessage,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response: ExtensionMessageResponse) => void
+  ): boolean {
     if (message.type === 'TRANSCRIPT_UPDATE') {
       this.addTranscript(message.data);
       sendResponse({ success: true });
@@ -406,12 +427,34 @@ class GoogleMeetTranscriber {
     div.textContent = text;
     return div.innerHTML;
   }
+
+  /**
+   * クリーンアップ処理
+   * リソースの解放とイベントリスナーの削除
+   */
+  public cleanup() {
+    // イベントリスナーのクリーンアップ
+    this.eventHandlers.forEach((handler, element) => {
+      element.removeEventListener('click', handler);
+    });
+    this.eventHandlers.clear();
+
+    // DOM要素の削除
+    this.controlButton?.remove();
+    this.overlay?.remove();
+
+    if (import.meta.env.DEV) {
+      console.log('[MeetingTranscriber] Cleanup completed');
+    }
+  }
 }
 
 // 初期化
-new GoogleMeetTranscriber();
+const transcriber = new GoogleMeetTranscriber();
 
 // 開発用のデバッグAPI
 if (import.meta.env.DEV) {
-  console.log('[Meeting Transcriber] Google Meet Content Script loaded');
+  console.log('[MeetingTranscriber] Google Meet Content Script loaded');
+  // @ts-ignore
+  window.__meetingTranscriber = transcriber;
 }
