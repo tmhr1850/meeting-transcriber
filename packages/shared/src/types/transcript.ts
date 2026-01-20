@@ -57,7 +57,7 @@ export interface MeetingSummary {
  */
 export interface ActionItem {
   /** アクション内容 */
-  description: string;
+  task: string;
   /** 担当者 */
   assignee?: string;
   /** 期限 (ISO 8601日付形式: YYYY-MM-DD) */
