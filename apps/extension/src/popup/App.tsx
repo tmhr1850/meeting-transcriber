@@ -1,76 +1,47 @@
-import { useEffect, useState } from 'react';
-import type { RecordingState, ExtensionMessage } from '@meeting-transcriber/shared';
+import { useState, useEffect } from 'react';
+import { Button, Avatar } from '@meeting-transcriber/ui';
 
+interface User {
+  email: string;
+  name: string;
+  image?: string;
+}
+
+/**
+ * Popup UIコンポーネント
+ * 拡張アイコンクリック時に表示される
+ */
 export function App() {
-  const [status, setStatus] = useState<RecordingState>({
-    isRecording: false,
-    currentMeetingId: null,
-    currentTabId: null,
-    startTime: null,
-  });
-  const [isOnMeetingPage, setIsOnMeetingPage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
-
-    // エラーハンドリング付きでステータス取得
-    const fetchStatus = async () => {
-      try {
-        const response = await chrome.runtime.sendMessage({
-          type: 'GET_STATUS',
-        } as ExtensionMessage);
-        if (response && isMounted) {
-          setStatus(response);
-        }
-      } catch (err) {
-        if (import.meta.env.DEV) {
-          console.error('Failed to get status:', err);
-        }
-        if (isMounted) {
-          setError('ステータスの取得に失敗しました');
-        }
-      }
-    };
-
-    // 認証状態を確認
-    chrome.storage.local.get('authToken', (result) => {
-      if (isMounted) {
-        setIsAuthenticated(!!result.authToken);
-      }
+    // 認証状態を取得
+    chrome.storage.local.get(['user'], (result) => {
+      setUser(result.user || null);
+      setIsLoading(false);
     });
-
-    // 現在のタブを確認（エラーハンドリング付き）
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (chrome.runtime.lastError) {
-        if (import.meta.env.DEV) {
-          console.error('Failed to query tabs:', chrome.runtime.lastError);
-        }
-        if (isMounted) {
-          setError('タブ情報の取得に失敗しました');
-        }
-        return;
-      }
-      const url = tabs[0]?.url || '';
-      if (isMounted) {
-        setIsOnMeetingPage(
-          url.includes('meet.google.com') ||
-            url.includes('zoom.us') ||
-            url.includes('teams.microsoft.com') ||
-            url.includes('teams.live.com')
-        );
-      }
-    });
-
-    fetchStatus();
-
-    // クリーンアップ関数
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
+  /**
+   * Side Panelを開く
+   */
+  const openSidePanel = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        chrome.sidePanel.open({ tabId: tab.id });
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error('Failed to open side panel:', err);
+      }
+    }
+  };
+
+  /**
+   * ダッシュボード（Web App）を開く
+   */
   const openDashboard = () => {
     try {
       chrome.tabs.create({ url: import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000' });
@@ -78,60 +49,101 @@ export function App() {
       if (import.meta.env.DEV) {
         console.error('Failed to open dashboard:', err);
       }
-      setError('ダッシュボードを開けませんでした');
     }
   };
 
+  /**
+   * 設定ページを開く
+   */
+  const openSettings = () => {
+    try {
+      chrome.runtime.openOptionsPage();
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error('Failed to open settings:', err);
+      }
+    }
+  };
+
+  /**
+   * ログインページを開く
+   */
+  const handleLogin = () => {
+    try {
+      const webUrl = import.meta.env.VITE_DASHBOARD_URL || 'http://localhost:3000';
+      chrome.tabs.create({ url: `${webUrl}/auth/signin` });
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error('Failed to open login page:', err);
+      }
+    }
+  };
+
+  /**
+   * ログアウト処理
+   */
+  const handleLogout = async () => {
+    try {
+      await chrome.storage.local.remove(['user', 'authToken']);
+      setUser(null);
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.error('Failed to logout:', err);
+      }
+    }
+  };
+
+  if (isLoading) {
+    return <div className="w-64 p-4">読み込み中...</div>;
+  }
+
   return (
-    <div className="w-72 p-4 bg-white">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-          <span className="text-white text-lg">M</span>
-        </div>
-        <h1 className="text-lg font-bold">Meeting Transcriber</h1>
+    <div className="w-64 p-4">
+      <h1 className="text-lg font-bold mb-4">Meeting Transcriber</h1>
+
+      {/* User Info */}
+      <div className="border rounded-lg p-3 mb-4">
+        {user ? (
+          <div className="flex items-center gap-3">
+            <Avatar src={user.image} fallback={user.name?.[0] || '?'} />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{user.name}</p>
+              <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              <p className="text-xs text-green-600 mt-1">ログイン中</p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center">
+            <p className="text-gray-500 mb-2">ログインしていません</p>
+            <Button onClick={handleLogin} className="w-full">
+              ログイン
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* エラー表示 */}
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
-          <span className="text-red-700 text-sm">{error}</span>
+      {/* Actions */}
+      {user && (
+        <div className="space-y-2">
+          <Button variant="outline" className="w-full justify-start" onClick={openSidePanel}>
+            📋 Side Panelを開く
+          </Button>
+          <Button variant="outline" className="w-full justify-start" onClick={openDashboard}>
+            📁 会議一覧を見る
+          </Button>
+          <Button variant="outline" className="w-full justify-start" onClick={openSettings}>
+            ⚙️ 設定
+          </Button>
+          <Button variant="ghost" className="w-full justify-start text-red-500" onClick={handleLogout}>
+            ログアウト
+          </Button>
         </div>
       )}
 
-      {/* 認証状態の確認 */}
-      {!isAuthenticated && !error && (
-        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
-          <span className="text-yellow-700 text-sm">
-            ダッシュボードからログインしてください
-          </span>
-        </div>
-      )}
-
-      {/* 録音状態表示 */}
-      {status.isRecording ? (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-red-700 font-medium">録音中</span>
-          </div>
-        </div>
-      ) : isOnMeetingPage ? (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-          <span className="text-green-700">会議ページで録音ボタンをクリックしてください</span>
-        </div>
-      ) : (
-        <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg mb-4">
-          <span className="text-gray-600">Google Meet/Zoom/Teamsで使用できます</span>
-        </div>
-      )}
-
-      <button
-        onClick={openDashboard}
-        className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={!!error}
-      >
-        ダッシュボードを開く
-      </button>
+      {/* Footer */}
+      <div className="mt-4 pt-4 border-t text-center text-xs text-gray-400">
+        v1.0.0
+      </div>
     </div>
   );
 }
