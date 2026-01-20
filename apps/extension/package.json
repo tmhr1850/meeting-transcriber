@@ -14,6 +14,7 @@
     "@meeting-transcriber/shared": "workspace:*",
     "@meeting-transcriber/api-client": "workspace:*",
     "@meeting-transcriber/audio-processor": "workspace:*",
+    "@meeting-transcriber/ui": "workspace:*",
     "webextension-polyfill": "^0.10.0"
   },
   "devDependencies": {
