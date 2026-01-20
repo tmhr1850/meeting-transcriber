@@ -10,7 +10,7 @@ import { UserMenu } from './UserMenu';
  * ロゴ、通知、ユーザーメニューを表示
  */
 export function Header() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
@@ -30,8 +30,19 @@ export function Header() {
           <Bell className="h-5 w-5" />
         </button>
 
-        {/* User Menu */}
-        {session?.user && <UserMenu user={session.user} />}
+        {/* User Menu with loading state and fallback */}
+        {status === 'loading' ? (
+          <div className="h-8 w-8 animate-pulse bg-gray-200 rounded-full" />
+        ) : session?.user ? (
+          <UserMenu user={session.user} />
+        ) : (
+          <Link
+            href="/login"
+            className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+          >
+            ログイン
+          </Link>
+        )}
       </div>
     </header>
   );

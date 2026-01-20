@@ -42,11 +42,18 @@ export function UserMenu({ user }: UserMenuProps) {
 
   /**
    * ログアウト処理
+   * エラーハンドリングを含む
    */
   const handleSignOut = async () => {
-    await signOut({
-      callbackUrl: '/login',
-    });
+    try {
+      await signOut({
+        callbackUrl: '/login',
+      });
+    } catch (error) {
+      console.error('ログアウトに失敗しました:', error);
+      // TODO: トースト通知などでユーザーに通知
+      alert('ログアウトに失敗しました。もう一度お試しください。');
+    }
   };
 
   return (
