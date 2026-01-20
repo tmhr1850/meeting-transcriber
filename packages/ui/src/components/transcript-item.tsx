@@ -3,7 +3,7 @@ import { cn } from '../lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from './avatar';
 
 export interface TranscriptItemProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+  extends React.HTMLAttributes<HTMLElement> {
   /**
    * タイムスタンプ（例: "00:05:23"）
    */
@@ -45,7 +45,7 @@ export interface TranscriptItemProps
  * />
  * ```
  */
-const TranscriptItem = React.forwardRef<HTMLDivElement, TranscriptItemProps>(
+const TranscriptItem = React.forwardRef<HTMLElement, TranscriptItemProps>(
   (
     {
       className,
@@ -63,14 +63,18 @@ const TranscriptItem = React.forwardRef<HTMLDivElement, TranscriptItemProps>(
     const fallbackText =
       avatarFallback || speaker.slice(0, 2).toUpperCase();
 
+    // スクリーンリーダー用のラベル
+    const ariaLabel = `${timestamp}、${speaker}の発言: ${text}`;
+
     return (
-      <div
+      <article
         ref={ref}
         className={cn(
           'flex gap-3 rounded-lg p-3 transition-colors hover:bg-accent/50',
           highlighted && 'bg-accent',
           className
         )}
+        aria-label={ariaLabel}
         {...props}
       >
         {/* タイムスタンプ */}
@@ -91,7 +95,7 @@ const TranscriptItem = React.forwardRef<HTMLDivElement, TranscriptItemProps>(
             {text}
           </div>
         </div>
-      </div>
+      </article>
     );
   }
 );
