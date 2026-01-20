@@ -56,7 +56,7 @@ class ZoomMeetingDetector {
         lastUrl = location.href;
         this.checkMeetingState();
       }
-    }, 1000);
+    }, 2000);
   }
 
   /**
@@ -75,14 +75,20 @@ class ZoomMeetingDetector {
    * Zoom会議中かどうかを検出
    */
   private detectZoomMeeting(): boolean {
-    // 1. ビデオコンテナの存在確認
-    const videoContainer = document.querySelector('[class*="video-container"]');
+    // 1. ビデオコンテナの存在確認（Zoom固有のクラス名を優先）
+    const videoContainer = document.querySelector(
+      '.video-container__inner, [class*="video-container"]'
+    );
 
-    // 2. コントロールバーの存在確認
-    const controlBar = document.querySelector('[class*="footer-button-base"]');
+    // 2. コントロールバーの存在確認（Zoom固有のクラス名を優先）
+    const controlBar = document.querySelector(
+      '.meeting-client-inner__footer, [class*="footer-button-base"]'
+    );
 
-    // 3. 会議IDの取得
-    const meetingIdElement = document.querySelector('[class*="meeting-id"]');
+    // 3. 会議IDの取得（Zoom固有のクラス名を優先）
+    const meetingIdElement = document.querySelector(
+      '.meeting-info-container__meeting-id, [class*="meeting-id"]'
+    );
     if (meetingIdElement) {
       this.meetingInfo.id = meetingIdElement.textContent?.trim();
     } else {
@@ -93,8 +99,10 @@ class ZoomMeetingDetector {
       }
     }
 
-    // 4. 会議トピックの取得
-    const topicElement = document.querySelector('[class*="meeting-topic"]');
+    // 4. 会議トピックの取得（Zoom固有のクラス名を優先）
+    const topicElement = document.querySelector(
+      '.meeting-topic-container, [class*="meeting-topic"]'
+    );
     if (topicElement) {
       this.meetingInfo.topic = topicElement.textContent?.trim();
     } else {
