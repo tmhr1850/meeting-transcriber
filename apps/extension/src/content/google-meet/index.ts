@@ -34,6 +34,8 @@ class GoogleMeetTranscriber {
    */
   private waitForMeetingReady(): Promise<void> {
     return new Promise((resolve) => {
+      let timeoutId: NodeJS.Timeout | null = null;
+
       const observer = new MutationObserver((mutations, obs) => {
         // Google Meet固有の要素を検出
         const controlsBar = document.querySelector('[data-is-muted]');
@@ -41,6 +43,7 @@ class GoogleMeetTranscriber {
 
         if (controlsBar || meetingContainer) {
           obs.disconnect();
+          if (timeoutId) clearTimeout(timeoutId);
           resolve();
         }
       });
@@ -51,7 +54,7 @@ class GoogleMeetTranscriber {
       });
 
       // タイムアウト（30秒）
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         observer.disconnect();
         resolve();
       }, 30000);
@@ -70,6 +73,10 @@ class GoogleMeetTranscriber {
    * 録音コントロールボタンを注入
    */
   private injectControlButton() {
+    // 既存のボタンがあれば削除（重複対策）
+    const existing = document.getElementById('mt-control-button');
+    if (existing) existing.remove();
+
     const button = document.createElement('div');
     button.id = 'mt-control-button';
     button.innerHTML = `
@@ -84,48 +91,50 @@ class GoogleMeetTranscriber {
       </button>
     `;
 
-    // スタイル
-    const style = document.createElement('style');
-    style.textContent = `
-      #mt-control-button {
-        position: fixed;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10000;
-      }
-      .mt-btn {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 20px;
-        background: #7c3aed;
-        color: white;
-        border: none;
-        border-radius: 24px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
-        transition: all 0.2s;
-      }
-      .mt-btn:hover {
-        background: #6d28d9;
-        transform: scale(1.05);
-      }
-      .mt-btn.recording {
-        background: #dc2626;
-        animation: pulse 2s infinite;
-      }
-      @keyframes pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
-        50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
-      }
-    `;
+    // スタイル（重複対策でIDをチェック）
+    if (!document.getElementById('mt-control-button-styles')) {
+      const style = document.createElement('style');
+      style.id = 'mt-control-button-styles';
+      style.textContent = `
+        #mt-control-button {
+          position: fixed;
+          bottom: 80px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 10000;
+        }
+        .mt-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 20px;
+          background: #7c3aed;
+          color: white;
+          border: none;
+          border-radius: 24px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+          transition: all 0.2s;
+        }
+        .mt-btn:hover {
+          background: #6d28d9;
+          transform: scale(1.05);
+        }
+        .mt-btn.recording {
+          background: #dc2626;
+          animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+          50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
 
-    document.head.appendChild(style);
     document.body.appendChild(button);
-
     this.controlButton = button;
 
     // イベントリスナー
@@ -138,6 +147,10 @@ class GoogleMeetTranscriber {
    * 文字起こしオーバーレイを作成
    */
   private createTranscriptOverlay() {
+    // 既存のオーバーレイがあれば削除（重複対策）
+    const existing = document.getElementById('mt-transcript-overlay');
+    if (existing) existing.remove();
+
     this.overlay = document.createElement('div');
     this.overlay.id = 'mt-transcript-overlay';
     this.overlay.innerHTML = `
@@ -148,67 +161,71 @@ class GoogleMeetTranscriber {
       <div id="mt-transcript-content"></div>
     `;
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #mt-transcript-overlay {
-        position: fixed;
-        right: 20px;
-        bottom: 100px;
-        width: 400px;
-        max-height: 300px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        z-index: 10000;
-        display: none;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      #mt-transcript-overlay.visible {
-        display: flex;
-      }
-      .mt-overlay-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        background: #7c3aed;
-        color: white;
-        font-weight: 500;
-      }
-      .mt-overlay-header button {
-        background: none;
-        border: none;
-        color: white;
-        font-size: 20px;
-        cursor: pointer;
-      }
-      #mt-transcript-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 16px;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      .mt-segment {
-        margin-bottom: 12px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #eee;
-      }
-      .mt-segment:last-child {
-        border-bottom: none;
-      }
-      .mt-timestamp {
-        font-size: 12px;
-        color: #888;
-        margin-bottom: 4px;
-      }
-      .mt-text {
-        color: #333;
-      }
-    `;
+    // スタイル（重複対策でIDをチェック）
+    if (!document.getElementById('mt-transcript-overlay-styles')) {
+      const style = document.createElement('style');
+      style.id = 'mt-transcript-overlay-styles';
+      style.textContent = `
+        #mt-transcript-overlay {
+          position: fixed;
+          right: 20px;
+          bottom: 100px;
+          width: 400px;
+          max-height: 300px;
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+          z-index: 10000;
+          display: none;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        #mt-transcript-overlay.visible {
+          display: flex;
+        }
+        .mt-overlay-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: #7c3aed;
+          color: white;
+          font-weight: 500;
+        }
+        .mt-overlay-header button {
+          background: none;
+          border: none;
+          color: white;
+          font-size: 20px;
+          cursor: pointer;
+        }
+        #mt-transcript-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px;
+          font-size: 14px;
+          line-height: 1.6;
+        }
+        .mt-segment {
+          margin-bottom: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid #eee;
+        }
+        .mt-segment:last-child {
+          border-bottom: none;
+        }
+        .mt-timestamp {
+          font-size: 12px;
+          color: #888;
+          margin-bottom: 4px;
+        }
+        .mt-text {
+          color: #333;
+        }
+      `;
+      document.head.appendChild(style);
+    }
 
-    document.head.appendChild(style);
     document.body.appendChild(this.overlay);
 
     // 閉じるボタン
@@ -280,14 +297,17 @@ class GoogleMeetTranscriber {
           console.log('Recording stopped successfully');
         }
       } else {
+        const errorMsg = response?.error || '録音の停止に失敗しました';
         if (import.meta.env.DEV) {
-          console.error('Failed to stop:', response?.error);
+          console.error('Failed to stop:', errorMsg);
         }
+        alert(errorMsg);
       }
     } catch (error) {
       if (import.meta.env.DEV) {
         console.error('Error stopping transcription:', error);
       }
+      alert('録音の停止に失敗しました: ' + String(error));
     }
   }
 
@@ -353,7 +373,7 @@ class GoogleMeetTranscriber {
     const segment = document.createElement('div');
     segment.className = 'mt-segment';
 
-    const timestamp = this.formatTimestamp(data.segment.timestamp);
+    const timestamp = this.formatTimestamp(data.segment.startTime);
 
     segment.innerHTML = `
       <div class="mt-timestamp">${timestamp}</div>
