@@ -3,7 +3,8 @@
  * Web App APIとの通信を管理するクライアント
  */
 
-import type { MeetingCreateRequest, TranscriptionResponse } from '@meeting-transcriber/shared';
+import type { TranscriptionResponse } from '@meeting-transcriber/shared';
+import type { CreateMeetingInput } from '@meeting-transcriber/api-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_TIMEOUT_MS = 30000; // 30秒
@@ -86,7 +87,7 @@ class ExtensionAPI {
    * @param data - 会議情報
    * @returns 会議ID
    */
-  async startMeeting(data: MeetingCreateRequest): Promise<{ meetingId: string }> {
+  async startMeeting(data: CreateMeetingInput): Promise<{ meetingId: string }> {
     try {
       console.log('[API] Starting meeting:', data);
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/meetings`, {

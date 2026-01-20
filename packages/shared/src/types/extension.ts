@@ -123,6 +123,14 @@ export type ExtensionMessage =
       type: 'AI_RESPONSE';
       response: string;
       query: string;
+    }
+  // Offscreen -> Background: 文字起こしエラー通知
+  | {
+      type: 'TRANSCRIPTION_ERROR';
+      error: {
+        chunkIndex: number;
+        message: string;
+      };
     };
 
 /**

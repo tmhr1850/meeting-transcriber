@@ -32,6 +32,12 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
 };
 
 /**
+ * デフォルトの音声チャンク期間（ミリ秒）
+ * 実際の音声チャンク長に基づいて調整可能
+ */
+const DEFAULT_CHUNK_DURATION_MS = 5000;
+
+/**
  * Chunk Queue クラス
  */
 class ChunkQueue {
@@ -105,7 +111,7 @@ class ChunkQueue {
               meetingId: this.meetingId,
               text: result.text,
               startTime: item.timestamp,
-              endTime: item.timestamp + 5000, // 仮の終了時刻（5秒後）
+              endTime: item.timestamp + DEFAULT_CHUNK_DURATION_MS,
               speakerId: result.speaker,
               speakerName: result.speaker || '不明',
               isEdited: false,
@@ -122,6 +128,9 @@ class ChunkQueue {
         }
 
         console.log(`[ChunkQueue] Successfully processed chunk ${item.chunkIndex}`);
+
+        // メモリ管理: 処理完了後にArrayBufferの参照をクリア
+        (item as any).chunk = null;
       } catch (error) {
         console.error(`[ChunkQueue] Failed to process chunk ${item.chunkIndex}:`, error);
 
@@ -144,7 +153,6 @@ class ChunkQueue {
         } else {
           console.error(`[ChunkQueue] Max retries exceeded for chunk ${item.chunkIndex}, skipping`);
           // エラーメッセージをBackground Scriptに送信
-          // TODO: TRANSCRIPTION_ERRORメッセージ型をExtensionMessageに追加
           try {
             await chrome.runtime.sendMessage({
               type: 'TRANSCRIPTION_ERROR',
@@ -156,6 +164,9 @@ class ChunkQueue {
           } catch (messageError) {
             console.error(`[ChunkQueue] Failed to send error message for chunk ${item.chunkIndex}:`, messageError);
           }
+
+          // メモリ管理: リトライ失敗時もArrayBufferの参照をクリア
+          (item as any).chunk = null;
         }
       }
     }
