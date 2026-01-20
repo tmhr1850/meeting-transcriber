@@ -59,6 +59,26 @@ export interface TranscriptUpdateData {
  * Background、Content Script、Offscreen、Popup、Side Panel間の通信に使用
  */
 export type ExtensionMessage =
+  // Content Script -> Background: 会議検出通知
+  | {
+      type: 'MEETING_DETECTED';
+      payload: {
+        platform: Platform;
+        url: string;
+        meetingId?: string;
+        title?: string;
+      };
+    }
+  // Content Script -> Background: 会議終了通知
+  | {
+      type: 'MEETING_ENDED';
+      payload: {
+        platform: Platform;
+        url: string;
+        meetingId?: string;
+        title?: string;
+      };
+    }
   // Content Script -> Background: 録音開始リクエスト
   | {
       type: 'START_RECORDING';
