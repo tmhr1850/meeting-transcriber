@@ -46,6 +46,8 @@ export interface TranscriptionResponse {
   timestamp: number;
   /** セグメントID */
   segmentId: string;
+  /** 話者ID */
+  speaker?: string;
   /** 言語コード */
   language?: string;
   /** 信頼度 (0.0-1.0) */

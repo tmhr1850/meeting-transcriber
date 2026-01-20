@@ -144,22 +144,12 @@ export type ExtensionMessage =
       response: string;
       query: string;
     }
-  // Content Script -> Background: 会議検出通知
+  // Offscreen -> Background: 文字起こしエラー通知
   | {
-      type: 'MEETING_DETECTED';
-      payload: {
-        platform: Platform;
-        url: string;
-        title?: string;
-      };
-    }
-  // Content Script -> Background: 会議終了通知
-  | {
-      type: 'MEETING_ENDED';
-      payload: {
-        platform: Platform;
-        url: string;
-        title?: string;
+      type: 'TRANSCRIPTION_ERROR';
+      error: {
+        chunkIndex: number;
+        message: string;
       };
     };
 
