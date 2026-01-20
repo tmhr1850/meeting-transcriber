@@ -16,6 +16,7 @@
     "@auth/prisma-adapter": "^2.7.4",
     "@meeting-transcriber/database": "workspace:*",
     "@meeting-transcriber/shared": "workspace:*",
+    "@meeting-transcriber/ui": "workspace:*",
     "@prisma/client": "^6.1.0",
     "@upstash/ratelimit": "^2.0.7",
     "@upstash/redis": "^1.36.1",
