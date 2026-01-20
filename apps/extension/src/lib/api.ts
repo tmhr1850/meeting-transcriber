@@ -3,10 +3,10 @@
  * Web App APIとの通信を管理するクライアント
  */
 
-import { ApiClient } from '@meeting-transcriber/api-client';
 import type { MeetingCreateRequest, TranscriptionResponse } from '@meeting-transcriber/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_TIMEOUT_MS = 30000; // 30秒
 
 /**
  * 認証トークンを取得
@@ -22,15 +22,54 @@ async function getAuthToken(): Promise<string | null> {
 }
 
 /**
+ * タイムアウト付きfetch
+ * @param url - URL
+ * @param options - fetchオプション
+ * @param timeoutMs - タイムアウト（ミリ秒）
+ * @returns Response
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = API_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * エラーレスポンスの詳細を取得
+ * @param response - Responseオブジェクト
+ * @returns エラーメッセージ
+ */
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const errorBody = await response.json();
+    return errorBody.error || errorBody.message || response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
+/**
  * Extension API クライアント
  */
 class ExtensionAPI {
-  private apiClient: ApiClient;
-
-  constructor() {
-    this.apiClient = new ApiClient(API_BASE_URL);
-  }
-
   /**
    * 認証ヘッダーを取得
    */
@@ -50,14 +89,15 @@ class ExtensionAPI {
   async startMeeting(data: MeetingCreateRequest): Promise<{ meetingId: string }> {
     try {
       console.log('[API] Starting meeting:', data);
-      const response = await fetch(`${API_BASE_URL}/api/meetings`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/meetings`, {
         method: 'POST',
         headers: await this.getHeaders(),
         body: JSON.stringify(data),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorMessage = await getErrorMessage(response);
+        throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
       const result = await response.json();
@@ -88,7 +128,7 @@ class ExtensionAPI {
       formData.append('audio', new Blob([data.chunk], { type: 'audio/webm' }));
 
       const token = await getAuthToken();
-      const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/transcribe`, {
         method: 'POST',
         headers: {
           ...(token && { Authorization: `Bearer ${token}` }),
@@ -97,7 +137,8 @@ class ExtensionAPI {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorMessage = await getErrorMessage(response);
+        throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
       const result = await response.json();
@@ -116,13 +157,14 @@ class ExtensionAPI {
   async endMeeting(meetingId: string): Promise<void> {
     try {
       console.log('[API] Ending meeting:', meetingId);
-      const response = await fetch(`${API_BASE_URL}/api/meetings/${meetingId}/end`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/meetings/${meetingId}/end`, {
         method: 'POST',
         headers: await this.getHeaders(),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorMessage = await getErrorMessage(response);
+        throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
       console.log('[API] Meeting ended:', meetingId);
@@ -144,13 +186,14 @@ class ExtensionAPI {
   }> {
     try {
       console.log('[API] Requesting summary for meeting:', meetingId);
-      const response = await fetch(`${API_BASE_URL}/api/meetings/${meetingId}/summary`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/meetings/${meetingId}/summary`, {
         method: 'POST',
         headers: await this.getHeaders(),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const errorMessage = await getErrorMessage(response);
+        throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
       const result = await response.json();

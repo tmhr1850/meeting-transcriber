@@ -4,7 +4,6 @@
  */
 
 import { api } from './api';
-import { formatTimestamp } from './utils';
 import type { ExtensionMessage } from '@meeting-transcriber/shared';
 
 /**
@@ -115,7 +114,12 @@ class ChunkQueue {
           },
         };
 
-        await chrome.runtime.sendMessage(message);
+        try {
+          await chrome.runtime.sendMessage(message);
+        } catch (messageError) {
+          console.error(`[ChunkQueue] Failed to send message for chunk ${item.chunkIndex}:`, messageError);
+          // メッセージ送信エラーは致命的ではないので、処理を続行
+        }
 
         console.log(`[ChunkQueue] Successfully processed chunk ${item.chunkIndex}`);
       } catch (error) {
@@ -140,13 +144,18 @@ class ChunkQueue {
         } else {
           console.error(`[ChunkQueue] Max retries exceeded for chunk ${item.chunkIndex}, skipping`);
           // エラーメッセージをBackground Scriptに送信
-          await chrome.runtime.sendMessage({
-            type: 'TRANSCRIPTION_ERROR',
-            error: {
-              chunkIndex: item.chunkIndex,
-              message: error instanceof Error ? error.message : 'Unknown error',
-            },
-          });
+          // TODO: TRANSCRIPTION_ERRORメッセージ型をExtensionMessageに追加
+          try {
+            await chrome.runtime.sendMessage({
+              type: 'TRANSCRIPTION_ERROR',
+              error: {
+                chunkIndex: item.chunkIndex,
+                message: error instanceof Error ? error.message : 'Unknown error',
+              },
+            });
+          } catch (messageError) {
+            console.error(`[ChunkQueue] Failed to send error message for chunk ${item.chunkIndex}:`, messageError);
+          }
         }
       }
     }
