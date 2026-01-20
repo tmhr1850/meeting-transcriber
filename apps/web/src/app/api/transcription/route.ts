@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
-import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
+import { checkRateLimit, getRateLimitHeaders, getRetryAfterSeconds } from '@/lib/rate-limit';
 import { RATE_LIMITS } from '@/lib/config/rate-limits';
 
 /**
@@ -66,18 +66,18 @@ export async function POST(request: NextRequest) {
     );
 
     if (!rateLimitResult.success) {
+      const retryAfter = getRetryAfterSeconds(rateLimitResult.reset);
+
       return NextResponse.json(
         {
           error: 'リクエストが多すぎます。しばらく待ってから再試行してください。',
-          retryAfter: Math.ceil((rateLimitResult.reset - Date.now()) / 1000),
+          retryAfter,
         },
         {
           status: 429,
           headers: {
             ...getRateLimitHeaders(rateLimitResult),
-            'Retry-After': Math.ceil(
-              (rateLimitResult.reset - Date.now()) / 1000
-            ).toString(),
+            'Retry-After': retryAfter.toString(),
           },
         }
       );

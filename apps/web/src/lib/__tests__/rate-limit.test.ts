@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { checkRateLimit, getRateLimitHeaders } from '../rate-limit';
+import { checkRateLimit, getRateLimitHeaders, getRetryAfterSeconds } from '../rate-limit';
 
 // Upstash Redisのモック
 vi.mock('@upstash/redis', () => ({
@@ -147,6 +147,48 @@ describe('getRateLimitHeaders', () => {
       'X-RateLimit-Remaining': '0',
       'X-RateLimit-Reset': '1704067200000',
     });
+  });
+});
+
+describe('getRetryAfterSeconds', () => {
+  it('未来のタイムスタンプから正しい秒数を計算する', () => {
+    const now = Date.now();
+    const resetTimestamp = now + 3600000; // 1時間後
+
+    const retryAfter = getRetryAfterSeconds(resetTimestamp);
+
+    // 3600秒（1時間）前後であることを確認（実行時間の誤差を考慮）
+    expect(retryAfter).toBeGreaterThanOrEqual(3599);
+    expect(retryAfter).toBeLessThanOrEqual(3601);
+  });
+
+  it('過去のタイムスタンプの場合は0を返す', () => {
+    const now = Date.now();
+    const resetTimestamp = now - 1000; // 1秒前
+
+    const retryAfter = getRetryAfterSeconds(resetTimestamp);
+
+    expect(retryAfter).toBe(0);
+  });
+
+  it('現在時刻とほぼ同じ場合は0または1を返す', () => {
+    const now = Date.now();
+    const resetTimestamp = now + 100; // 100ミリ秒後
+
+    const retryAfter = getRetryAfterSeconds(resetTimestamp);
+
+    expect(retryAfter).toBeGreaterThanOrEqual(0);
+    expect(retryAfter).toBeLessThanOrEqual(1);
+  });
+
+  it('秒数に切り上げる', () => {
+    const now = Date.now();
+    const resetTimestamp = now + 1500; // 1.5秒後
+
+    const retryAfter = getRetryAfterSeconds(resetTimestamp);
+
+    // 切り上げで2秒になる
+    expect(retryAfter).toBe(2);
   });
 });
 

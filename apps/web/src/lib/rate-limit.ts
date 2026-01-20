@@ -299,6 +299,18 @@ function getInMemoryRateLimiter(): InMemoryRateLimiter {
 }
 
 /**
+ * Retry-After秒数を計算
+ *
+ * レート制限超過時に、次のリクエストまでの待機時間を秒数で返します。
+ *
+ * @param resetTimestamp - レート制限がリセットされる時刻（ミリ秒）
+ * @returns Retry-After秒数（最小値: 0）
+ */
+export function getRetryAfterSeconds(resetTimestamp: number): number {
+  return Math.max(0, Math.ceil((resetTimestamp - Date.now()) / 1000));
+}
+
+/**
  * レート制限ヘッダーを生成
  *
  * @param result - レート制限の結果
