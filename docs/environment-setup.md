@@ -1,284 +1,296 @@
-# 環境変数セットアップガイド
+# 環境変数設定ガイド
 
-Meeting Transcriberアプリケーションの環境変数設定ガイドです。
+このガイドでは、Meeting Transcriberの環境変数の設定方法を詳しく説明します。
 
-## 概要
+## セットアップの流れ
 
-このガイドでは、開発環境と本番環境での環境変数の設定方法を説明します。
+1. `.env.example`ファイルをコピー
+2. 各サービスのAPIキーを取得
+3. `.env`ファイルに値を設定
+4. アプリケーションを起動
 
-## 環境変数一覧
+## 1. .envファイルの作成
 
-### 必須環境変数
-
-#### Database
-
-```env
-DATABASE_URL=postgresql://...@ep-xxx.aws.neon.tech/meeting-transcriber?sslmode=require
+```bash
+cp apps/web/.env.example apps/web/.env
 ```
 
-- **説明**: PostgreSQLデータベースの接続URL
-- **取得方法**: [Neon](https://neon.tech/)でデータベースを作成
-- **ローカル**: 開発用データベースのURLを設定
-- **本番**: 本番用データベースのURLを設定
+## 2. 環境変数の設定
 
-#### OpenAI
+### DATABASE_URL（必須）
 
+PostgreSQLデータベース接続文字列です。Neon PostgreSQLを使用します。
+
+**取得方法:**
+
+1. [Neon Console](https://console.neon.tech)にアクセス
+2. 「Create Project」をクリック
+3. プロジェクト名を「meeting-transcriber」に設定
+4. リージョンを選択（推奨: Asia Pacific (Singapore)）
+5. 作成後、「Connection String」をコピー
+6. 末尾に`?sslmode=require`を追加
+
+**例:**
 ```env
-OPENAI_API_KEY=sk-...
+DATABASE_URL=postgresql://username:password@ep-blue-smoke-a1fbaqt8-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
 ```
 
-- **説明**: OpenAI APIの認証キー
-- **取得方法**: [OpenAI Platform](https://platform.openai.com/api-keys)でAPIキーを作成
-- **ローカル**: 開発用APIキーを設定
-- **本番**: 本番用APIキーを設定（使用量制限に注意）
+**注意事項:**
+- Neon無料プランの制限: 0.5GB、10時間のアクティブ時間/月
+- 本番環境では有料プランの使用を推奨
 
-#### NextAuth
+---
 
+### NEXTAUTH_SECRET（必須）
+
+NextAuth.jsのセッション署名に使用するシークレットキーです。
+
+**生成方法:**
+
+```bash
+openssl rand -base64 32
+```
+
+**例:**
 ```env
-NEXTAUTH_SECRET=your-secret-key
+NEXTAUTH_SECRET=I6qTtANVh2bVzWiMltkPGAHr9DlqxKidf9XLaUWbi1I=
+```
+
+**注意事項:**
+- 本番環境と開発環境で異なる値を使用してください
+- 絶対に公開リポジトリにコミットしないでください
+
+---
+
+### NEXTAUTH_URL（必須）
+
+アプリケーションのベースURLです。
+
+**開発環境:**
+```env
 NEXTAUTH_URL=http://localhost:3000
 ```
 
-- **NEXTAUTH_SECRET**: NextAuth.jsのセッション暗号化に使用する秘密鍵
-  - **生成方法**: `openssl rand -base64 32` で生成
-  - **ローカル**: 任意の秘密鍵
-  - **本番**: 強力なランダム文字列を使用
-- **NEXTAUTH_URL**: アプリケーションのベースURL
-  - **ローカル**: `http://localhost:3000`
-  - **本番**: `https://your-domain.com`
-
-#### Google OAuth
-
+**本番環境:**
 ```env
-GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=xxx
+NEXTAUTH_URL=https://your-domain.com
 ```
 
-- **説明**: Google OAuthの認証情報
-- **取得方法**: [Google Cloud Console](https://console.cloud.google.com/)でOAuth 2.0クライアントIDを作成
-  1. プロジェクトを作成
-  2. 「APIとサービス」→「認証情報」を開く
-  3. 「認証情報を作成」→「OAuth 2.0クライアントID」を選択
-  4. アプリケーションの種類で「ウェブアプリケーション」を選択
-  5. 承認済みのリダイレクトURIを設定:
-     - ローカル: `http://localhost:3000/api/auth/callback/google`
-     - 本番: `https://your-domain.com/api/auth/callback/google`
+---
 
-### オプション環境変数
+### GOOGLE_CLIENT_ID、GOOGLE_CLIENT_SECRET（必須）
 
-#### Upstash Redis（レート制限用）
+Google OAuth認証に使用するクライアント情報です。
 
+**取得方法:**
+
+1. [Google Cloud Console](https://console.cloud.google.com/)にアクセス
+2. プロジェクトを作成（まだない場合）
+3. 「APIとサービス」→「認証情報」に移動
+4. 「認証情報を作成」→「OAuth 2.0 クライアントID」をクリック
+5. アプリケーションの種類: 「ウェブアプリケーション」を選択
+6. 名前を入力（例: Meeting Transcriber）
+7. 承認済みのリダイレクトURIに以下を追加:
+   - 開発環境: `http://localhost:3000/api/auth/callback/google`
+   - 本番環境: `https://your-domain.com/api/auth/callback/google`
+8. 「作成」をクリック
+9. 表示された「クライアントID」と「クライアントシークレット」をコピー
+
+**例:**
 ```env
-UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxx
+GOOGLE_CLIENT_ID=436600938334-xxxxxxxxxxxxxxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-- **説明**: レート制限機能で使用するRedisの認証情報
-- **取得方法**: [Upstash Console](https://console.upstash.com/)でRedisデータベースを作成
-- **ローカル**: **未設定でも動作**（インメモリフォールバック）
-- **本番**: **設定を強く推奨**（分散レート制限に必要）
+**OAuth同意画面の設定:**
 
-詳細は[Upstashセットアップガイド](./upstash-setup.md)を参照してください。
+初回セットアップ時は、OAuth同意画面の設定も必要です:
 
-#### Chrome拡張機能用
+1. 「OAuth同意画面」タブに移動
+2. ユーザータイプ: 「外部」を選択
+3. アプリ名、ユーザーサポートメール、デベロッパーの連絡先情報を入力
+4. スコープの追加:
+   - `userinfo.email`
+   - `userinfo.profile`
+5. テストユーザーを追加（開発中のみ）
 
+---
+
+### OPENAI_API_KEY（必須）
+
+OpenAI APIのAPIキーです。Whisper API（文字起こし）とGPT-4（要約）に使用します。
+
+**取得方法:**
+
+1. [OpenAI Platform](https://platform.openai.com/)にアクセス
+2. サインアップまたはログイン
+3. 右上のアカウントメニューから「API keys」を選択
+4. 「Create new secret key」をクリック
+5. 名前を入力（例: meeting-transcriber）
+6. 権限を選択（All推奨）
+7. APIキーをコピー（⚠️ 一度しか表示されません）
+
+**例:**
 ```env
-VITE_API_URL=http://localhost:3000/api
-EXTENSION_JWT_SECRET=your-extension-secret
+OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-- **VITE_API_URL**: WebアプリのAPIエンドポイントURL
-  - **ローカル**: `http://localhost:3000/api`
-  - **本番**: `https://your-domain.com/api`
-- **EXTENSION_JWT_SECRET**: 拡張機能とWeb間の通信認証に使用する秘密鍵
-  - **生成方法**: `openssl rand -base64 32` で生成
+**重要な制限事項:**
 
-## セットアップ手順
+| 項目 | 制限 |
+|------|------|
+| **ファイルサイズ** | **最大25MB**（Whisper API） |
+| 料金（Whisper） | $0.006/分 |
+| 料金（GPT-4） | 入力: $0.03/1K tokens、出力: $0.06/1K tokens |
+| レート制限 | 組織のティアにより異なる |
 
-### ローカル開発環境
+**レート制限の確認:**
 
-#### 1. リポジトリをクローン
+レート制限は組織のティア（Free, Tier 1-5）によって異なります:
+- [Rate Limitsページ](https://platform.openai.com/account/limits)で確認可能
+- 無料プランの場合、リクエスト数が制限されます
+- 本番環境では有料プランの使用を推奨
+
+**注意事項:**
+- APIキーは絶対に公開しないでください
+- 定期的にキーをローテーションしてください
+- 使用量を監視し、予期しない課金を防いでください
+- 環境変数が設定されていない場合、アプリケーションはエラーを返します
+
+---
+
+### EXTENSION_JWT_SECRET（必須）
+
+Chrome拡張機能との通信に使用するJWT署名キーです。
+
+**生成方法:**
 
 ```bash
-git clone https://github.com/tmhr1850/meeting-transcriber.git
-cd meeting-transcriber
+openssl rand -base64 32
 ```
 
-#### 2. 依存関係をインストール
+**例:**
+```env
+EXTENSION_JWT_SECRET=mu03NvnlosGE8cJPAOLfc/RXisrZ6nfos6Xx2ECXGn4=
+```
+
+**注意事項:**
+- `NEXTAUTH_SECRET`とは異なる値を使用してください
+- 拡張機能を使用しない場合でも、設定が必要です
+
+---
+
+## 3. 設定の確認
+
+環境変数を設定後、以下のコマンドで確認できます:
 
 ```bash
-pnpm install
+cd apps/web
+node -e "console.log(process.env.OPENAI_API_KEY ? '✓ OPENAI_API_KEY設定済み' : '✗ OPENAI_API_KEY未設定')"
 ```
 
-#### 3. 環境変数ファイルを作成
+## 4. データベースのセットアップ
+
+環境変数を設定したら、Prismaマイグレーションを実行します:
 
 ```bash
-# Webアプリ用
-cp apps/web/.env.example apps/web/.env.local
-
-# Chrome拡張用（必要に応じて）
-cp apps/extension/.env.example apps/extension/.env.local
+cd apps/web
+pnpm prisma migrate dev
+pnpm prisma generate
 ```
 
-#### 4. 環境変数を編集
+成功すると、以下のメッセージが表示されます:
 
-`.env.local`ファイルを開いて、各環境変数を設定します。
-
-```bash
-# Webアプリ
-nano apps/web/.env.local
+```
+✔ Generated Prisma Client
 ```
 
-最低限、以下の環境変数を設定してください。
-
-- `DATABASE_URL`
-- `OPENAI_API_KEY`
-- `NEXTAUTH_SECRET`
-- `NEXTAUTH_URL`
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-
-**注意**: `UPSTASH_REDIS_REST_URL`と`UPSTASH_REDIS_REST_TOKEN`は開発環境では**オプション**です。
-
-#### 5. データベースをセットアップ
-
-```bash
-# Prismaマイグレーションを実行
-pnpm --filter @meeting-transcriber/web prisma migrate dev
-
-# Prisma Clientを生成
-pnpm --filter @meeting-transcriber/web prisma generate
-```
-
-#### 6. 開発サーバーを起動
+## 5. 開発サーバーの起動
 
 ```bash
 pnpm dev
 ```
 
-アプリケーションが`http://localhost:3000`で起動します。
+成功すると:
 
-### 本番環境（Vercel）
-
-#### 1. Vercelプロジェクトを作成
-
-```bash
-# Vercel CLIをインストール（初回のみ）
-npm i -g vercel
-
-# プロジェクトをデプロイ
-vercel
+```
+▲ Next.js 14.x.x
+- Local:        http://localhost:3000
+- ready in xxx ms
 ```
 
-#### 2. 環境変数を設定
+http://localhost:3000 にアクセスして動作確認してください。
 
-Vercel Dashboard → プロジェクト → Settings → Environment Variables
-
-以下の環境変数を追加します。
-
-| 変数名 | 値 | 環境 |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL接続URL | Production, Preview, Development |
-| `OPENAI_API_KEY` | OpenAI APIキー | Production, Preview |
-| `NEXTAUTH_SECRET` | ランダム文字列 | Production, Preview, Development |
-| `NEXTAUTH_URL` | `https://your-domain.com` | Production |
-| `GOOGLE_CLIENT_ID` | Google OAuth Client ID | Production, Preview, Development |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | Production, Preview, Development |
-| `UPSTASH_REDIS_REST_URL` | Upstash Redis URL | Production, Preview |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis Token | Production, Preview |
-
-**重要**: 本番環境では`UPSTASH_REDIS_REST_URL`と`UPSTASH_REDIS_REST_TOKEN`の設定を**強く推奨**します。
-
-#### 3. デプロイ
-
-```bash
-vercel --prod
-```
-
-### 本番環境（その他のプラットフォーム）
-
-使用するプラットフォームのドキュメントに従って、環境変数を設定してください。
-
-- **Railway**: Settings → Variables
-- **Render**: Environment → Environment Variables
-- **AWS/GCP/Azure**: 各プラットフォームの環境変数設定機能を使用
-
-## セキュリティのベストプラクティス
-
-### 1. 環境変数の管理
-
-- `.env.local`ファイルを`.gitignore`に追加（デフォルトで追加済み）
-- 環境変数をリポジトリにコミットしない
-- 本番環境とローカル環境で異なる値を使用
-
-### 2. APIキーの保護
-
-- APIキーは定期的にローテーション
-- 使用量の監視とアラート設定
-- 最小権限の原則を適用
-
-### 3. 秘密鍵の生成
-
-強力なランダム文字列を生成してください。
-
-```bash
-# NEXTAUTH_SECRETを生成
-openssl rand -base64 32
-
-# EXTENSION_JWT_SECRETを生成
-openssl rand -base64 32
-```
-
-### 4. データベース接続
-
-- データベースURLにSSLモードを使用（`?sslmode=require`）
-- IPホワイトリストを設定（可能な場合）
-- 読み取り専用ユーザーを分離（必要に応じて）
+---
 
 ## トラブルシューティング
 
-### エラー: `DATABASE_URL`が未定義
+### エラー: "OPENAI_API_KEY環境変数が設定されていません"
 
-**原因**: `DATABASE_URL`が環境変数に設定されていない
+**原因:** `.env`ファイルに`OPENAI_API_KEY`が設定されていない、または値が間違っています。
 
-**解決策**:
-1. `.env.local`ファイルを確認
-2. `DATABASE_URL`が正しく設定されているか確認
-3. アプリケーションを再起動
+**解決方法:**
+1. `apps/web/.env`ファイルを確認
+2. `OPENAI_API_KEY=sk-proj-...`の形式で設定されているか確認
+3. APIキーが有効か確認（[API Keysページ](https://platform.openai.com/api-keys)）
 
-### エラー: NextAuth configuration error
+### エラー: "Database connection failed"
 
-**原因**: `NEXTAUTH_SECRET`または`NEXTAUTH_URL`が未設定
+**原因:** `DATABASE_URL`が間違っているか、データベースが起動していません。
 
-**解決策**:
-1. `.env.local`ファイルに`NEXTAUTH_SECRET`を追加
-2. `NEXTAUTH_URL`を正しいURLに設定
-3. アプリケーションを再起動
+**解決方法:**
+1. Neon Consoleでデータベースが起動しているか確認
+2. `DATABASE_URL`の形式を確認（`postgresql://...?sslmode=require`）
+3. ネットワーク接続を確認
 
-### エラー: Google OAuth authentication failed
+### エラー: "Invalid Google OAuth configuration"
 
-**原因**: Google OAuth設定が不正
+**原因:** Google OAuth設定が間違っているか、リダイレクトURIが設定されていません。
 
-**解決策**:
+**解決方法:**
 1. Google Cloud Consoleで認証情報を確認
-2. リダイレクトURIが正しく設定されているか確認
-3. `GOOGLE_CLIENT_ID`と`GOOGLE_CLIENT_SECRET`が正しいか確認
+2. リダイレクトURIに`http://localhost:3000/api/auth/callback/google`が追加されているか確認
+3. OAuth同意画面が設定されているか確認
 
-### レート制限が動作しない
+### エラー: "413 Payload Too Large"
 
-**原因**: Upstash Redisが設定されていない、またはインメモリフォールバックを使用している
+**原因:** アップロードしようとしているファイルが25MBを超えています。
 
-**解決策**:
-1. [Upstashセットアップガイド](./upstash-setup.md)を参照
-2. `UPSTASH_REDIS_REST_URL`と`UPSTASH_REDIS_REST_TOKEN`を設定
-3. アプリケーションを再起動
-4. コンソールログで「✓ Upstash Redisレート制限を使用します」を確認
+**解決方法:**
+- ファイルサイズを25MB以下に圧縮
+- または、ファイルを分割してアップロード
+- Whisper APIの制限のため、現在25MB超のファイルはサポートされていません
+
+---
+
+## セキュリティのベストプラクティス
+
+1. **環境変数を公開しない**
+   - `.env`ファイルは`.gitignore`に追加されています
+   - 絶対にコミットしないでください
+
+2. **APIキーを定期的にローテーション**
+   - 少なくとも3ヶ月に1回はAPIキーを更新
+   - 漏洩の疑いがある場合は即座に無効化
+
+3. **本番環境と開発環境で異なる値を使用**
+   - データベース、APIキー、シークレットキーは全て別の値を使用
+
+4. **レート制限を実装**
+   - ⚠️ 現在未実装（Issue #XXで対応予定）
+   - 本番環境では必ず実装してください
+
+5. **環境変数の管理**
+   - Vercelなどのホスティングサービスでは、管理画面から環境変数を設定
+   - ローカルでは`.env`ファイルで管理
+
+---
 
 ## 参考リンク
 
-- [Neon PostgreSQL](https://neon.tech/docs)
-- [OpenAI API](https://platform.openai.com/docs)
-- [NextAuth.js](https://authjs.dev/)
-- [Google OAuth 2.0](https://developers.google.com/identity/protocols/oauth2)
-- [Upstash Redis](https://upstash.com/docs/redis)
-- [Vercel Environment Variables](https://vercel.com/docs/environment-variables)
+- [Neon PostgreSQL Documentation](https://neon.tech/docs)
+- [NextAuth.js Configuration](https://authjs.dev/getting-started/installation)
+- [Google Cloud Console](https://console.cloud.google.com/)
+- [OpenAI Platform](https://platform.openai.com/)
+- [OpenAI API Documentation](https://platform.openai.com/docs)
+- [Vercel Environment Variables](https://vercel.com/docs/concepts/projects/environment-variables)

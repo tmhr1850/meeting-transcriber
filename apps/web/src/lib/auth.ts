@@ -1,16 +1,30 @@
+/**
+ * NextAuth.js v5 設定
+ *
+ * Google OAuthを使用した認証設定
+ * Prisma Adapterを使用してデータベースと連携
+ *
+ * 環境変数:
+ * - GOOGLE_CLIENT_ID
+ * - GOOGLE_CLIENT_SECRET
+ * - NEXTAUTH_SECRET
+ */
+
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
-import { prisma } from './prisma';
+import { prisma } from '@meeting-transcriber/database';
 
 /**
  * 環境変数の検証
- * 本番環境では必須の環境変数が設定されていることを確認
+ * 開発環境ではモックプロバイダーを使用、本番環境では実際の認証情報が必要
  */
 const hasGoogleCredentials =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
 
 if (!hasGoogleCredentials) {
+  // ビルド時や開発環境では警告のみ表示
+  // 実際のランタイムでの認証時にエラーが発生
   console.warn(
     'Warning: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set. Authentication will not work.'
   );
@@ -18,12 +32,8 @@ if (!hasGoogleCredentials) {
 
 /**
  * NextAuth.js v5設定
- * 環境変数:
- * - GOOGLE_CLIENT_ID
- * - GOOGLE_CLIENT_SECRET
- * - NEXTAUTH_SECRET
  */
-const nextAuthConfig = NextAuth({
+const nextAuth = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [
     // 環境変数が設定されている場合のみGoogleプロバイダーを追加
@@ -32,24 +42,54 @@ const nextAuthConfig = NextAuth({
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            authorization: {
+              params: {
+                prompt: 'consent',
+                access_type: 'offline',
+                response_type: 'code',
+              },
+            },
           }),
         ]
       : []),
   ],
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
   callbacks: {
+    /**
+     * セッションコールバック
+     * セッションにユーザーIDを追加
+     */
     session: async ({ session, user }) => {
-      if (session?.user && user?.id) {
+      if (session?.user && user) {
         session.user.id = user.id;
       }
       return session;
     },
   },
-  pages: {
-    signIn: '/login',
+  session: {
+    strategy: 'database' as const,
+    maxAge: 30 * 24 * 60 * 60, // 30日
+    updateAge: 24 * 60 * 60, // 24時間
   },
+  cookies: {
+    sessionToken: {
+      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
+  debug: process.env.NODE_ENV === 'development',
 });
 
-export const handlers: typeof nextAuthConfig.handlers = nextAuthConfig.handlers;
-export const signIn: typeof nextAuthConfig.signIn = nextAuthConfig.signIn;
-export const signOut: typeof nextAuthConfig.signOut = nextAuthConfig.signOut;
-export const auth: typeof nextAuthConfig.auth = nextAuthConfig.auth;
+export const handlers = nextAuth.handlers;
+export const signIn = nextAuth.signIn;
+export const signOut = nextAuth.signOut;
+export const auth = nextAuth.auth;
+export const { GET, POST } = handlers;

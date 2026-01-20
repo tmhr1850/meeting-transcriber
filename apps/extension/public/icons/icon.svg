@@ -1,0 +1,19 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景 -->
+  <rect width="128" height="128" rx="24" fill="#7C3AED"/>
+
+  <!-- マイクアイコン -->
+  <g transform="translate(32, 24)">
+    <!-- マイク本体 -->
+    <rect x="24" y="8" width="16" height="32" rx="8" fill="white"/>
+
+    <!-- マイクスタンド -->
+    <path d="M 32 40 Q 32 56 20 56 L 44 56 Q 32 56 32 40 Z" fill="white"/>
+    <rect x="30" y="56" width="4" height="16" fill="white"/>
+    <rect x="22" y="72" width="20" height="4" rx="2" fill="white"/>
+
+    <!-- 音波 -->
+    <path d="M 8 32 Q 4 32 4 24 Q 4 16 8 16" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M 56 32 Q 60 32 60 24 Q 60 16 56 16" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

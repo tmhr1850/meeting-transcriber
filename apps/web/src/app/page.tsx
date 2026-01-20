@@ -1,12 +1,18 @@
-import { redirect } from 'next/navigation';
-
 /**
- * ルートページ
- * ログイン済みユーザーは/meetingsへリダイレクト
- * 未ログインユーザーは/loginへリダイレクト
+ * ホームページ
+ *
+ * トップページ - ログイン済みの場合はダッシュボードへリダイレクト
  */
-export default function HomePage() {
-  // TODO: 認証状態を確認してリダイレクト
-  // 現在は開発中のため/meetingsへリダイレクト
-  redirect('/meetings');
+
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth';
+
+export default async function HomePage() {
+  const session = await auth();
+
+  if (session?.user) {
+    redirect('/meetings');
+  } else {
+    redirect('/login');
+  }
 }
