@@ -8,8 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@meeting-transcriber/database';
-import { generateMeetingSummary, type MeetingSummary } from '@/lib/openai/summary';
+import { generateMeetingSummary, type MeetingSummary, MeetingSummarySchema } from '@/lib/openai/summary';
 import type { GenerateSummaryResponse } from '@meeting-transcriber/shared';
+import { summaryRateLimit, checkRateLimit } from '@/lib/ratelimit';
 
 /**
  * 既存の要約を取得
@@ -80,17 +81,33 @@ export async function GET(
       );
     }
 
-    // 要約データを構築
-    const summaryData: MeetingSummary = {
+    // 要約データを構築してバリデーション
+    const summaryCandidate = {
       summary: meeting.summary,
-      keyPoints: Array.isArray(meeting.keyPoints) ? (meeting.keyPoints as string[]) : [],
-      actionItems: Array.isArray(meeting.actionItems) ? (meeting.actionItems as any[]) : [],
-      decisions: Array.isArray(meeting.decisions) ? (meeting.decisions as string[]) : [],
-      nextSteps: Array.isArray(meeting.nextSteps) ? (meeting.nextSteps as string[]) : [],
+      keyPoints: Array.isArray(meeting.keyPoints) ? meeting.keyPoints : [],
+      actionItems: Array.isArray(meeting.actionItems) ? meeting.actionItems : [],
+      decisions: Array.isArray(meeting.decisions) ? meeting.decisions : [],
+      nextSteps: Array.isArray(meeting.nextSteps) ? meeting.nextSteps : [],
     };
 
+    // Zodバリデーション
+    const validationResult = MeetingSummarySchema.safeParse(summaryCandidate);
+    if (!validationResult.success) {
+      console.error('DBから取得した要約データのバリデーションエラー:', validationResult.error.issues);
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_SUMMARY_DATA',
+            message: '保存された要約データの形式が不正です',
+          },
+        },
+        { status: 500 }
+      );
+    }
+
     const response: GenerateSummaryResponse = {
-      summary: summaryData,
+      summary: validationResult.data,
       generatedAt: meeting.updatedAt.toISOString(),
     };
 
@@ -132,6 +149,28 @@ export async function POST(
     }
 
     const meetingId = params.id;
+
+    // レート制限チェック
+    const rateLimitResult = await checkRateLimit(session.user.id, summaryRateLimit);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: `レート制限を超えました。1時間あたり${rateLimitResult.limit}回までリクエスト可能です。${new Date(rateLimitResult.reset).toLocaleTimeString('ja-JP')}にリセットされます。`,
+          },
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': rateLimitResult.reset.toString(),
+          },
+        }
+      );
+    }
 
     // リクエストボディを解析
     let force = false;
@@ -207,12 +246,17 @@ export async function POST(
       summaryData = await generateMeetingSummary(transcript, meeting.title);
     } catch (error) {
       console.error('要約生成エラー:', error);
+
+      // ユーザー定義エラー（バリデーション、トークン制限など）はそのまま返す
+      const errorMessage =
+        error instanceof Error ? error.message : '要約の生成中にエラーが発生しました';
+
       return NextResponse.json(
         {
           success: false,
           error: {
             code: 'SUMMARY_GENERATION_FAILED',
-            message: error instanceof Error ? error.message : '要約の生成に失敗しました',
+            message: errorMessage,
           },
         },
         { status: 500 }

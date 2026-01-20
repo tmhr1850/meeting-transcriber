@@ -9,6 +9,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@meeting-transcriber/database';
 import { runCustomPrompt } from '@/lib/openai/summary';
 import type { CustomPromptRequest, CustomPromptResponse } from '@meeting-transcriber/shared';
+import { askRateLimit, checkRateLimit } from '@/lib/ratelimit';
 
 /**
  * ユーザーの質問に対してGPT-4が回答
@@ -37,6 +38,28 @@ export async function POST(
     }
 
     const meetingId = params.id;
+
+    // レート制限チェック
+    const rateLimitResult = await checkRateLimit(session.user.id, askRateLimit);
+    if (!rateLimitResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: `レート制限を超えました。1時間あたり${rateLimitResult.limit}回までリクエスト可能です。${new Date(rateLimitResult.reset).toLocaleTimeString('ja-JP')}にリセットされます。`,
+          },
+        },
+        {
+          status: 429,
+          headers: {
+            'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+            'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+            'X-RateLimit-Reset': rateLimitResult.reset.toString(),
+          },
+        }
+      );
+    }
 
     // リクエストボディを解析
     let question: string;
@@ -120,12 +143,17 @@ export async function POST(
       answer = await runCustomPrompt(transcript, question, meeting.title);
     } catch (error) {
       console.error('カスタムプロンプト実行エラー:', error);
+
+      // ユーザー定義エラー（バリデーション、トークン制限など）はそのまま返す
+      const errorMessage =
+        error instanceof Error ? error.message : '回答の生成中にエラーが発生しました';
+
       return NextResponse.json(
         {
           success: false,
           error: {
             code: 'PROMPT_EXECUTION_FAILED',
-            message: error instanceof Error ? error.message : '回答の生成に失敗しました',
+            message: errorMessage,
           },
         },
         { status: 500 }

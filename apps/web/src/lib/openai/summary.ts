@@ -11,6 +11,8 @@
 
 import { openai } from './client';
 import type { ActionItem } from '@meeting-transcriber/shared';
+import { z } from 'zod';
+import { encoding_for_model } from 'tiktoken';
 
 /**
  * GPT-4による要約生成結果の型
@@ -29,6 +31,26 @@ interface SummaryResult {
 }
 
 /**
+ * Zodスキーマ: ActionItem のバリデーション
+ */
+export const ActionItemSchema = z.object({
+  task: z.string(),
+  assignee: z.string().optional(),
+  dueDate: z.string().optional(),
+});
+
+/**
+ * Zodスキーマ: MeetingSummary のバリデーション
+ */
+export const MeetingSummarySchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
+  actionItems: z.array(ActionItemSchema),
+  decisions: z.array(z.string()),
+  nextSteps: z.array(z.string()),
+});
+
+/**
  * 簡略化された要約データ型（DBに保存する形式）
  */
 export interface MeetingSummary {
@@ -37,6 +59,29 @@ export interface MeetingSummary {
   actionItems: ActionItem[];
   decisions: string[];
   nextSteps: string[];
+}
+
+/**
+ * テキストのトークン数をカウント
+ *
+ * GPT-4のコンテキスト制限（128K tokens）を超えないようにチェック
+ *
+ * @param text - カウントするテキスト
+ * @param model - 使用するモデル名（デフォルト: gpt-4）
+ * @returns トークン数
+ */
+export function countTokens(text: string, model: string = 'gpt-4'): number {
+  try {
+    const encoder = encoding_for_model(model as any);
+    const tokens = encoder.encode(text);
+    const tokenCount = tokens.length;
+    encoder.free(); // メモリ解放
+    return tokenCount;
+  } catch (error) {
+    console.error('トークンカウントエラー:', error);
+    // フォールバック: 大まかな推定（1トークン ≈ 4文字）
+    return Math.ceil(text.length / 4);
+  }
 }
 
 /**
@@ -54,6 +99,16 @@ export async function generateMeetingSummary(
   // 入力検証
   if (!transcript || transcript.trim().length === 0) {
     throw new Error('文字起こしテキストが空です');
+  }
+
+  // トークン数チェック（GPT-4のコンテキスト制限: 128K tokens）
+  // 安全のため100K tokensを上限とする
+  const tokenCount = countTokens(transcript);
+  const maxTokens = 100000;
+  if (tokenCount > maxTokens) {
+    throw new Error(
+      `文字起こしテキストが長すぎます（${tokenCount.toLocaleString()} tokens）。上限は${maxTokens.toLocaleString()} tokensです。`
+    );
   }
 
   // システムプロンプト: AIの役割と出力形式を定義
@@ -92,7 +147,7 @@ export async function generateMeetingSummary(
   try {
     // GPT-4 Turbo を使用して要約を生成
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -109,43 +164,35 @@ export async function generateMeetingSummary(
     }
 
     // JSONパース
-    let result: SummaryResult;
+    let parsedContent: unknown;
     try {
-      result = JSON.parse(content);
+      parsedContent = JSON.parse(content);
     } catch (parseError) {
       console.error('JSON解析エラー:', parseError);
       console.error('受信したコンテンツ:', content);
       throw new Error('GPT-4のレスポンスをJSON形式で解析できませんでした');
     }
 
-    // 必須フィールドの検証
-    if (!result.summary) {
-      throw new Error('要約が生成されませんでした');
+    // Zodバリデーション
+    const validationResult = MeetingSummarySchema.safeParse(parsedContent);
+    if (!validationResult.success) {
+      console.error('バリデーションエラー:', validationResult.error.issues);
+      console.error('受信したコンテンツ:', parsedContent);
+      throw new Error('GPT-4のレスポンスが期待される形式と一致しませんでした');
     }
 
-    // 型安全な変換
-    const summary: MeetingSummary = {
-      summary: result.summary,
-      keyPoints: Array.isArray(result.keyPoints) ? result.keyPoints : [],
-      actionItems: Array.isArray(result.actionItems)
-        ? result.actionItems.map((item) => ({
-            task: item.task,
-            assignee: item.assignee,
-            dueDate: item.dueDate,
-          }))
-        : [],
-      decisions: Array.isArray(result.decisions) ? result.decisions : [],
-      nextSteps: Array.isArray(result.nextSteps) ? result.nextSteps : [],
-    };
-
-    return summary;
+    return validationResult.data;
   } catch (error) {
     // エラーハンドリング
-    if (error instanceof Error) {
-      console.error('要約生成エラー:', error.message);
-      throw new Error(`要約生成に失敗しました: ${error.message}`);
+    console.error('要約生成エラー:', error);
+
+    // ユーザー定義エラー（バリデーションエラーなど）はそのまま投げる
+    if (error instanceof Error && !error.message.includes('OpenAI')) {
+      throw error;
     }
-    throw new Error('要約生成中に不明なエラーが発生しました');
+
+    // OpenAI APIエラーは一般的なメッセージに置き換え
+    throw new Error('要約生成中にエラーが発生しました。しばらくしてから再度お試しください。');
   }
 }
 
@@ -172,6 +219,16 @@ export async function runCustomPrompt(
     throw new Error('質問が空です');
   }
 
+  // トークン数チェック（GPT-4のコンテキスト制限: 128K tokens）
+  // 安全のため100K tokensを上限とする
+  const tokenCount = countTokens(transcript + question);
+  const maxTokens = 100000;
+  if (tokenCount > maxTokens) {
+    throw new Error(
+      `入力が長すぎます（${tokenCount.toLocaleString()} tokens）。上限は${maxTokens.toLocaleString()} tokensです。`
+    );
+  }
+
   // システムプロンプト
   const systemPrompt = `あなたは会議分析アシスタントです。
 提供された会議の文字起こしテキストに基づいて、ユーザーの質問に正確に回答してください。
@@ -188,7 +245,7 @@ export async function runCustomPrompt(
   try {
     // GPT-4 Turbo を使用して回答を生成
     const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4-turbo',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -206,10 +263,14 @@ export async function runCustomPrompt(
     return answer.trim();
   } catch (error) {
     // エラーハンドリング
-    if (error instanceof Error) {
-      console.error('カスタムプロンプト実行エラー:', error.message);
-      throw new Error(`回答生成に失敗しました: ${error.message}`);
+    console.error('カスタムプロンプト実行エラー:', error);
+
+    // ユーザー定義エラー（バリデーションエラーなど）はそのまま投げる
+    if (error instanceof Error && !error.message.includes('OpenAI')) {
+      throw error;
     }
-    throw new Error('回答生成中に不明なエラーが発生しました');
+
+    // OpenAI APIエラーは一般的なメッセージに置き換え
+    throw new Error('回答生成中にエラーが発生しました。しばらくしてから再度お試しください。');
   }
 }
