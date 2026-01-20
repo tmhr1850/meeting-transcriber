@@ -5,6 +5,7 @@
 
 import type { TranscriptionResponse } from '@meeting-transcriber/shared';
 import type { CreateMeetingInput } from '@meeting-transcriber/api-client';
+import { AUDIO_CONFIG } from '@meeting-transcriber/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_TIMEOUT_MS = 30000; // 30秒
@@ -126,7 +127,7 @@ class ExtensionAPI {
       formData.append('meetingId', data.meetingId);
       formData.append('timestamp', data.timestamp.toString());
       formData.append('chunkIndex', data.chunkIndex.toString());
-      formData.append('audio', new Blob([data.chunk], { type: 'audio/webm' }));
+      formData.append('audio', new Blob([data.chunk], { type: AUDIO_CONFIG.MIME_TYPE }));
 
       const token = await getAuthToken();
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/transcribe`, {
@@ -146,6 +147,11 @@ class ExtensionAPI {
       console.log(`[API] Transcription result for chunk ${data.chunkIndex}:`, result);
       return result;
     } catch (error) {
+      // ネットワークエラーとサーバーエラーを区別
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.error(`[API] Network error for chunk ${data.chunkIndex}:`, error);
+        throw new Error('ネットワークエラー: API接続に失敗しました');
+      }
       console.error(`[API] Failed to send audio chunk ${data.chunkIndex}:`, error);
       throw error;
     }

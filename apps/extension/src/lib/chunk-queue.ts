@@ -5,6 +5,7 @@
 
 import { api } from './api';
 import type { ExtensionMessage } from '@meeting-transcriber/shared';
+import { AUDIO_CONFIG } from '@meeting-transcriber/shared';
 
 /**
  * キューアイテム
@@ -30,12 +31,6 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
   initialDelayMs: 1000,
   useExponentialBackoff: true,
 };
-
-/**
- * デフォルトの音声チャンク期間（ミリ秒）
- * 実際の音声チャンク長に基づいて調整可能
- */
-const DEFAULT_CHUNK_DURATION_MS = 5000;
 
 /**
  * Chunk Queue クラス
@@ -111,7 +106,7 @@ class ChunkQueue {
               meetingId: this.meetingId,
               text: result.text,
               startTime: item.timestamp,
-              endTime: item.timestamp + DEFAULT_CHUNK_DURATION_MS,
+              endTime: item.timestamp + AUDIO_CONFIG.CHUNK_DURATION_MS,
               speakerId: result.speaker,
               speakerName: result.speaker || '不明',
               isEdited: false,

@@ -14,4 +14,6 @@ export const AUDIO_CONFIG = {
   MIN_CHUNK_SIZE: 1024,
   /** チャンク間のオーバーラップ時間（ミリ秒） */
   OVERLAP_DURATION_MS: 500,
+  /** 音声のMIMEタイプ */
+  MIME_TYPE: 'audio/webm',
 } as const;
