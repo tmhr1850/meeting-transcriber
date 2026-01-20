@@ -111,11 +111,12 @@ class InMemoryRateLimiter {
 }
 
 // Upstash Redisの設定確認とレート制限インスタンスの初期化
-let rateLimiter: Ratelimit | InMemoryRateLimiter;
 // Ratelimitインスタンスのキャッシュ（メモリリーク対策）
 const rateLimiterCache = new Map<string, Ratelimit>();
 // 共有Redis接続（接続プーリング）
 let sharedRedis: Redis | null = null;
+// InMemoryRateLimiterのシングルトンインスタンス（メモリリーク対策）
+let inMemoryInstance: InMemoryRateLimiter | null = null;
 
 if (
   process.env.UPSTASH_REDIS_REST_URL &&
@@ -127,14 +128,6 @@ if (
     token: process.env.UPSTASH_REDIS_REST_TOKEN,
   });
 
-  rateLimiter = new Ratelimit({
-    redis: sharedRedis,
-    // デフォルトのレート制限（後で上書き可能）
-    limiter: Ratelimit.slidingWindow(10, '1 h'),
-    analytics: true,
-    prefix: 'meeting-transcriber',
-  });
-
   console.log('✓ Upstash Redisレート制限を使用します');
 } else {
   // 開発環境: インメモリフォールバック
@@ -144,7 +137,6 @@ if (
   console.warn(
     '   設定方法: UPSTASH_REDIS_REST_URLとUPSTASH_REDIS_REST_TOKENを環境変数に設定してください'
   );
-  rateLimiter = new InMemoryRateLimiter();
 }
 
 /**
@@ -236,10 +228,11 @@ export async function checkRateLimit(
   window: string
 ): Promise<RateLimitResult> {
   try {
-    if (rateLimiter instanceof InMemoryRateLimiter) {
-      // インメモリの場合
+    if (!sharedRedis) {
+      // インメモリの場合: シングルトンインスタンスを使用
+      const inMemoryRateLimiter = getInMemoryRateLimiter();
       const windowMs = parseWindow(window);
-      return await rateLimiter.limit(identifier, limit, windowMs);
+      return await inMemoryRateLimiter.limit(identifier, limit, windowMs);
     } else {
       // Upstash Ratelimitの場合は、キャッシュされたインスタンスを使用
       // メモリリーク対策: 毎回新しいインスタンスを作成せず、再利用する
@@ -264,6 +257,36 @@ export async function checkRateLimit(
       reset: Date.now() + parseWindow(window),
     };
   }
+}
+
+/**
+ * InMemoryRateLimiterのシングルトンインスタンスを取得
+ *
+ * 複数のインスタンスが作成されることを防ぎ、メモリリークを防止します。
+ * プロセス終了時に自動的にクリーンアップされます。
+ *
+ * @returns InMemoryRateLimiterインスタンス
+ */
+function getInMemoryRateLimiter(): InMemoryRateLimiter {
+  if (!inMemoryInstance) {
+    inMemoryInstance = new InMemoryRateLimiter();
+
+    // プロセス終了時のクリーンアップ（開発環境のHot Reload対策）
+    if (typeof process !== 'undefined') {
+      const cleanup = () => {
+        if (inMemoryInstance) {
+          inMemoryInstance.destroy();
+          inMemoryInstance = null;
+        }
+      };
+
+      process.on('beforeExit', cleanup);
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+    }
+  }
+
+  return inMemoryInstance;
 }
 
 /**

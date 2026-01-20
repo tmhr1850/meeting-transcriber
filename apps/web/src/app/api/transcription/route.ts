@@ -22,6 +22,7 @@ import { auth } from '@/lib/auth';
 import { prisma, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
+import { RATE_LIMITS } from '@/lib/config/rate-limits';
 
 /**
  * リクエストボディのバリデーションスキーマ
@@ -57,11 +58,11 @@ export async function POST(request: NextRequest) {
 
     const userId = session.user.id as string;
 
-    // 2. レート制限チェック（5リクエスト/時間）
+    // 2. レート制限チェック
     rateLimitResult = await checkRateLimit(
       `transcription:${userId}`,
-      5,
-      '1 h'
+      RATE_LIMITS.TRANSCRIPTION.limit,
+      RATE_LIMITS.TRANSCRIPTION.window
     );
 
     if (!rateLimitResult.success) {

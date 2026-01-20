@@ -21,6 +21,7 @@ import { auth } from '@/lib/auth';
 import { prisma, type Platform, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rate-limit';
+import { RATE_LIMITS } from '@/lib/config/rate-limits';
 
 // セキュリティ: ファイルサイズ上限（25MB）
 // CRITICAL: splitAudioIntoChunksが未実装のため、現在は25MBまでのみサポート
@@ -89,11 +90,11 @@ export async function POST(request: NextRequest) {
 
     const userId = session.user.id as string;
 
-    // 2. レート制限チェック（10リクエスト/時間）
+    // 2. レート制限チェック
     rateLimitResult = await checkRateLimit(
       `upload:${userId}`,
-      10,
-      '1 h'
+      RATE_LIMITS.UPLOAD.limit,
+      RATE_LIMITS.UPLOAD.window
     );
 
     if (!rateLimitResult.success) {
