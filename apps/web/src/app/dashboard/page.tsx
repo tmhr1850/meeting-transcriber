@@ -39,11 +39,14 @@ export default async function DashboardPage() {
           <div className="rounded-lg bg-white p-6 shadow">
             <h3 className="text-lg font-semibold text-gray-900">新しい会議</h3>
             <p className="mt-2 text-sm text-gray-600">
-              Chrome拡張機能を使用して会議を文字起こし
+              音声ファイルをアップロードして文字起こし
             </p>
-            <button className="mt-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-              開始する
-            </button>
+            <a
+              href="/upload"
+              className="mt-4 inline-block rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              ファイルをアップロード
+            </a>
           </div>
 
           <div className="rounded-lg bg-white p-6 shadow">
