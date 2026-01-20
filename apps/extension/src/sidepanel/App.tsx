@@ -15,6 +15,7 @@ import type {
   ExtensionMessage,
   ExtensionMessageResponse,
 } from '@meeting-transcriber/shared';
+import { EXTENSION_CONSTANTS } from '@meeting-transcriber/shared';
 
 /**
  * Side Panel表示用のセグメント
@@ -25,16 +26,6 @@ interface DisplaySegment {
   text: string;
   timestamp: string; // "HH:MM:SS"形式の表示用タイムスタンプ
 }
-
-/**
- * セグメントの最大保持数（メモリリーク対策）
- */
-const MAX_SEGMENTS = 1000;
-
-/**
- * AIクエリのコンテキスト制限（直近N件のセグメントのみ）
- */
-const CONTEXT_LIMIT = 50;
 
 /**
  * TranscriptSegmentをDisplaySegmentに変換
@@ -54,6 +45,22 @@ const toDisplaySegment = (segment: TranscriptSegment): DisplaySegment => {
     timestamp: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`,
   };
 };
+
+/**
+ * 成功レスポンスの型ガード
+ * @param response - レスポンスオブジェクト
+ * @returns 成功レスポンスかどうか
+ */
+function isSuccessResponse(
+  response: unknown
+): response is { success: boolean; error?: string } {
+  return (
+    typeof response === 'object' &&
+    response !== null &&
+    'success' in response &&
+    typeof (response as { success: unknown }).success === 'boolean'
+  );
+}
 
 export function App() {
   const [isRecording, setIsRecording] = useState(false);
@@ -76,17 +83,30 @@ export function App() {
 
   /**
    * 新しいセグメントが追加されたら自動スクロール
+   * パフォーマンス最適化のため、配列全体ではなく長さのみを監視
    */
   useEffect(() => {
-    scrollToBottom();
-  }, [segments]);
+    if (segments.length > 0) {
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    }
+  }, [segments.length]);
 
   /**
    * Chrome拡張機能からのメッセージリスナー
    * リアルタイムで録音状態、文字起こし結果、経過時間を受信
    */
   useEffect(() => {
-    const listener = (message: ExtensionMessage) => {
+    const listener = (
+      message: ExtensionMessage,
+      sender: chrome.runtime.MessageSender
+    ) => {
+      // 自分の拡張機能からのメッセージのみ処理
+      if (sender.id !== chrome.runtime.id) {
+        return;
+      }
+
       switch (message.type) {
         case 'RECORDING_STATE_UPDATE':
           setIsRecording(message.isRecording);
@@ -105,10 +125,14 @@ export function App() {
           if (message.data?.segment) {
             const displaySegment = toDisplaySegment(message.data.segment);
             setSegments((prev) => {
+              // 重複チェック
+              if (prev.some((seg) => seg.id === displaySegment.id)) {
+                return prev;
+              }
               const updated = [...prev, displaySegment];
               // メモリリーク対策: 最大保持数を超えたら古いセグメントを削除
-              return updated.length > MAX_SEGMENTS
-                ? updated.slice(-MAX_SEGMENTS)
+              return updated.length > EXTENSION_CONSTANTS.MAX_SEGMENTS
+                ? updated.slice(-EXTENSION_CONSTANTS.MAX_SEGMENTS)
                 : updated;
             });
           }
@@ -128,8 +152,10 @@ export function App() {
     };
 
     chrome.runtime.onMessage.addListener(listener);
-    return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+    return () => {
+      chrome.runtime.onMessage.removeListener(listener);
+    };
+  }, []); // 依存配列を空にして、マウント時に1度だけ実行
 
   /**
    * 録音開始/停止ボタンのハンドラ
@@ -144,7 +170,7 @@ export function App() {
 
       const response = await chrome.runtime.sendMessage(message);
 
-      if (response && !response.success) {
+      if (isSuccessResponse(response) && !response.success) {
         console.error('録音操作に失敗:', response.error);
         // TODO: ユーザーにエラー通知（トースト等）
       }
@@ -176,9 +202,9 @@ export function App() {
     if (aiQuery.trim() === '' || !currentMeetingId) return;
 
     try {
-      // 直近CONTEXT_LIMIT件のセグメントIDのみを送信
+      // 直近N件のセグメントIDのみを送信
       const recentSegmentIds = segments
-        .slice(-CONTEXT_LIMIT)
+        .slice(-EXTENSION_CONSTANTS.CONTEXT_LIMIT)
         .map((seg) => seg.id);
 
       const message: ExtensionMessage = {
@@ -190,7 +216,7 @@ export function App() {
 
       const response = await chrome.runtime.sendMessage(message);
 
-      if (response && !response.success) {
+      if (isSuccessResponse(response) && !response.success) {
         console.error('AIクエリ送信に失敗:', response.error);
         // TODO: ユーザーにエラー通知
       } else {
