@@ -310,6 +310,7 @@ class TeamsMeetingDetector {
     const button = document.createElement('button');
     button.id = 'mt-control-button';
     button.textContent = '🎤 文字起こし開始';
+    button.setAttribute('aria-label', '文字起こしを開始');
 
     const handler = () => this.toggleTranscription();
     this.eventHandlers.set(button, handler);
@@ -336,6 +337,7 @@ class TeamsMeetingDetector {
     const closeButton = document.createElement('button');
     closeButton.id = 'mt-transcript-close';
     closeButton.textContent = '×';
+    closeButton.setAttribute('aria-label', '文字起こしオーバーレイを閉じる');
     const closeHandler = () => overlay.classList.remove('visible');
     this.eventHandlers.set(closeButton, closeHandler);
     closeButton.addEventListener('click', closeHandler);
@@ -431,9 +433,11 @@ class TeamsMeetingDetector {
     if (this.isTranscribing) {
       this.controlButton.textContent = '⏹️ 文字起こし停止';
       this.controlButton.classList.add('recording');
+      this.controlButton.setAttribute('aria-label', '文字起こしを停止');
     } else {
       this.controlButton.textContent = '🎤 文字起こし開始';
       this.controlButton.classList.remove('recording');
+      this.controlButton.setAttribute('aria-label', '文字起こしを開始');
     }
   }
 
@@ -467,11 +471,11 @@ class TeamsMeetingDetector {
 
     const timestamp = document.createElement('div');
     timestamp.className = 'mt-transcript-timestamp';
-    timestamp.textContent = new Date(data.timestamp).toLocaleTimeString('ja-JP');
+    timestamp.textContent = this.formatTimestamp(data.segment.startTime);
 
     const text = document.createElement('div');
     text.className = 'mt-transcript-text';
-    text.textContent = data.text;
+    text.textContent = data.segment.text;
 
     segment.appendChild(timestamp);
     segment.appendChild(text);
@@ -480,6 +484,20 @@ class TeamsMeetingDetector {
 
     // 自動スクロール
     content.scrollTop = content.scrollHeight;
+  }
+
+  /**
+   * タイムスタンプをフォーマット（会議開始からの経過時刻）
+   */
+  private formatTimestamp(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
   }
 
   /**
