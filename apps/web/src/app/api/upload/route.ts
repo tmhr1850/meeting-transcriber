@@ -11,6 +11,8 @@
  * レスポンス:
  * - meetingId: 作成された会議ID
  * - status: 処理ステータス
+ *
+ * レート制限: 10リクエスト/時間
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,6 +20,8 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma, type Platform, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
+import { checkRateLimit, getRateLimitHeaders, getRetryAfterSeconds } from '@/lib/rate-limit';
+import { RATE_LIMITS } from '@/lib/config/rate-limits';
 
 // セキュリティ: ファイルサイズ上限（25MB）
 // CRITICAL: splitAudioIntoChunksが未実装のため、現在は25MBまでのみサポート
@@ -50,6 +54,7 @@ const uploadRequestSchema = z.object({
  * 音声ファイルをアップロードし、非同期で文字起こし処理を開始します。
  *
  * 認証必須
+ * レート制限: 10リクエスト/時間
  *
  * ⚠️ **WARNING: 本番環境での制限事項**
  *
@@ -64,26 +69,14 @@ const uploadRequestSchema = z.object({
  *    - fire-and-forgetパターンのため、エラー追跡が困難
  *    - リトライ機能が実装されていません
  *
- * 3. **レート制限が未実装**
- *    - DoS攻撃のリスクがあります
- *    - 本番環境では必ずレート制限を実装してください
- *    - 推奨ライブラリ: @upstash/ratelimit, @vercel/edge
- *
- * 4. **推奨対応**
+ * 3. **推奨対応**
  *    本番デプロイ前に必ずバックグラウンドジョブキューを導入してください:
  *    - **Inngest** (推奨): Next.jsと統合が簡単、無料プランあり
  *    - **BullMQ**: Redis必須だが高機能
  *    - **Trigger.dev**: 開発者体験が良い
  */
 export async function POST(request: NextRequest) {
-  // TODO: レート制限の実装
-  // 例: @upstash/ratelimit を使用
-  // const ratelimit = new Ratelimit({
-  //   redis: Redis.fromEnv(),
-  //   limiter: Ratelimit.slidingWindow(10, "1 h"), // 1時間に10リクエスト
-  // });
-  // const { success } = await ratelimit.limit(session.user.id);
-  // if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+  let rateLimitResult: Awaited<ReturnType<typeof checkRateLimit>> | null = null;
 
   try {
     // 1. 認証チェック
@@ -97,10 +90,35 @@ export async function POST(request: NextRequest) {
 
     const userId = session.user.id as string;
 
-    // 2. リクエストボディの解析（multipart/form-data）
+    // 2. レート制限チェック
+    rateLimitResult = await checkRateLimit(
+      `upload:${userId}`,
+      RATE_LIMITS.UPLOAD.limit,
+      RATE_LIMITS.UPLOAD.window
+    );
+
+    if (!rateLimitResult.success) {
+      const retryAfter = getRetryAfterSeconds(rateLimitResult.reset);
+
+      return NextResponse.json(
+        {
+          error: 'リクエストが多すぎます。しばらく待ってから再試行してください。',
+          retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            ...getRateLimitHeaders(rateLimitResult),
+            'Retry-After': retryAfter.toString(),
+          },
+        }
+      );
+    }
+
+    // 3. リクエストボディの解析（multipart/form-data）
     const formData = await request.formData();
 
-    // 3. Zodでバリデーション
+    // 4. Zodでバリデーション
     const validationResult = uploadRequestSchema.safeParse({
       audioFile: formData.get('audioFile'),
       title: formData.get('title') || '音声ファイルのアップロード',
@@ -116,7 +134,10 @@ export async function POST(request: NextRequest) {
             message: e.message,
           })),
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
@@ -124,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`音声ファイルアップロード: ${audioFile.name} (${(audioFile.size / 1024 / 1024).toFixed(2)}MB)`);
 
-    // 4. ファイルサイズ制限チェック（25MB）
+    // 5. ファイルサイズ制限チェック（25MB）
     // CRITICAL: splitAudioIntoChunksが未実装のため、25MB超は拒否
     const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
     if (audioFile.size > MAX_AUDIO_SIZE) {
@@ -133,11 +154,14 @@ export async function POST(request: NextRequest) {
           error: '音声ファイルが大きすぎます',
           details: `現在は25MBまでのファイルのみサポートしています。ファイルサイズ: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`,
         },
-        { status: 413 } // Payload Too Large
+        {
+          status: 413,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
-    // 5. 会議レコードを作成
+    // 6. 会議レコードを作成
     const meeting = await prisma.meeting.create({
       data: {
         userId,
@@ -150,18 +174,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`会議レコードを作成しました: ${meeting.id}`);
 
-    // 5. 文字起こし処理を実行
+    // 7. 文字起こし処理を実行
     // CRITICAL: 25MBに制限したため、awaitして同期実行
     // NOTE: Vercelのタイムアウト制限に注意（無料: 10秒、Pro: 60秒）
     // 本番環境ではバックグラウンドジョブキュー（Inngest、BullMQ等）の使用を推奨
     await processTranscriptionAsync(meeting.id, audioFile, language);
 
-    // 6. レスポンス（処理完了後に返却）
+    // 8. レスポンス（処理完了後に返却）
     return NextResponse.json({
       success: true,
       meetingId: meeting.id,
       status: 'completed',
       message: '音声ファイルのアップロードと文字起こしが完了しました。',
+    }, {
+      headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
     });
 
   } catch (error) {
@@ -177,7 +203,10 @@ export async function POST(request: NextRequest) {
             ? error.message
             : '不明なエラー',
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+      }
     );
   }
 }

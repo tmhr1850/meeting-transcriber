@@ -12,6 +12,8 @@
  * - segments: 文字起こしセグメント配列
  * - text: 全文テキスト
  * - duration: 音声の長さ（秒）
+ *
+ * レート制限: 5リクエスト/時間
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,6 +21,8 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { prisma, type MeetingStatus } from '@meeting-transcriber/database';
 import { transcribeAudio, transcribeLongAudio, mergeTranscriptionResults } from '@/lib/openai/whisper';
+import { checkRateLimit, getRateLimitHeaders, getRetryAfterSeconds } from '@/lib/rate-limit';
+import { RATE_LIMITS } from '@/lib/config/rate-limits';
 
 /**
  * リクエストボディのバリデーションスキーマ
@@ -35,23 +39,12 @@ const transcriptionRequestSchema = z.object({
  * 音声ファイルを文字起こしし、データベースに保存します。
  *
  * 認証必須、会議の所有者のみアクセス可能
- *
- * ⚠️ **TODO: レート制限の実装**
- * DoS攻撃を防ぐため、本番環境では必ずレート制限を実装してください。
- * 推奨ライブラリ: @upstash/ratelimit, @vercel/edge
+ * レート制限: 5リクエスト/時間
  */
 export async function POST(request: NextRequest) {
-  // TODO: レート制限の実装
-  // 例: @upstash/ratelimit を使用
-  // const ratelimit = new Ratelimit({
-  //   redis: Redis.fromEnv(),
-  //   limiter: Ratelimit.slidingWindow(5, "1 h"), // 1時間に5リクエスト
-  // });
-  // const { success } = await ratelimit.limit(session.user.id);
-  // if (!success) return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
-
   // エラーハンドリング用にスコープ外で宣言
   let meetingId: string | null = null;
+  let rateLimitResult: Awaited<ReturnType<typeof checkRateLimit>> | null = null;
 
   try {
     // 1. 認証チェック
@@ -65,10 +58,35 @@ export async function POST(request: NextRequest) {
 
     const userId = session.user.id as string;
 
-    // 2. リクエストボディの解析（multipart/form-data）
+    // 2. レート制限チェック
+    rateLimitResult = await checkRateLimit(
+      `transcription:${userId}`,
+      RATE_LIMITS.TRANSCRIPTION.limit,
+      RATE_LIMITS.TRANSCRIPTION.window
+    );
+
+    if (!rateLimitResult.success) {
+      const retryAfter = getRetryAfterSeconds(rateLimitResult.reset);
+
+      return NextResponse.json(
+        {
+          error: 'リクエストが多すぎます。しばらく待ってから再試行してください。',
+          retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            ...getRateLimitHeaders(rateLimitResult),
+            'Retry-After': retryAfter.toString(),
+          },
+        }
+      );
+    }
+
+    // 3. リクエストボディの解析（multipart/form-data）
     const formData = await request.formData();
 
-    // 3. Zodでバリデーション
+    // 4. Zodでバリデーション
     const validationResult = transcriptionRequestSchema.safeParse({
       meetingId: formData.get('meetingId'),
       audioFile: formData.get('audioFile'),
@@ -84,14 +102,17 @@ export async function POST(request: NextRequest) {
             message: e.message,
           })),
         },
-        { status: 400 }
+        {
+          status: 400,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
     const { meetingId: validatedMeetingId, audioFile, language } = validationResult.data;
     meetingId = validatedMeetingId;
 
-    // 4. ファイルサイズ制限チェック（25MB）
+    // 5. ファイルサイズ制限チェック（25MB）
     // CRITICAL: splitAudioIntoChunksが未実装のため、25MB超は拒否
     const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
     if (audioFile.size > MAX_AUDIO_SIZE) {
@@ -100,11 +121,14 @@ export async function POST(request: NextRequest) {
           error: '音声ファイルが大きすぎます',
           details: `現在は25MBまでのファイルのみサポートしています。ファイルサイズ: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`,
         },
-        { status: 413 } // Payload Too Large
+        {
+          status: 413,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
-    // 5. 会議の存在確認と所有者チェック
+    // 6. 会議の存在確認と所有者チェック
     const meeting = await prisma.meeting.findUnique({
       where: { id: meetingId },
     });
@@ -112,18 +136,24 @@ export async function POST(request: NextRequest) {
     if (!meeting) {
       return NextResponse.json(
         { error: '会議が見つかりません' },
-        { status: 404 }
+        {
+          status: 404,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
     if (meeting.userId !== userId) {
       return NextResponse.json(
         { error: 'この会議にアクセスする権限がありません' },
-        { status: 403 }
+        {
+          status: 403,
+          headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+        }
       );
     }
 
-    // 5. ステータスを「処理中」に更新
+    // 7. ステータスを「処理中」に更新
     await prisma.meeting.update({
       where: { id: meetingId },
       data: {
@@ -140,7 +170,7 @@ export async function POST(request: NextRequest) {
       data: { processingProgress: 10 },
     });
 
-    // 6. Whisper APIで文字起こし（25MB以下のみサポート）
+    // 8. Whisper APIで文字起こし（25MB以下のみサポート）
     // 進捗: 25% - Whisper API呼び出し開始
     await prisma.meeting.update({
       where: { id: meetingId },
@@ -156,7 +186,7 @@ export async function POST(request: NextRequest) {
       data: { processingProgress: 70 },
     });
 
-    // 7. 結果を統合
+    // 9. 結果を統合
     const mergedResult = mergeTranscriptionResults(results);
 
     console.log(`文字起こし完了: ${mergedResult.text.length}文字, ${mergedResult.segments?.length || 0}セグメント`);
@@ -167,11 +197,11 @@ export async function POST(request: NextRequest) {
       data: { processingProgress: 80 },
     });
 
-    // 8. データベースに保存
+    // 10. データベースに保存
     if (mergedResult.segments && mergedResult.segments.length > 0) {
       // セグメント単位でデータベースに保存
       const segmentsToCreate = mergedResult.segments.map((segment, index) => ({
-        meetingId,
+        meetingId: meetingId!,  // nullではないことを保証（バリデーション済み）
         speaker: 'Unknown', // TODO: 話者識別機能を実装後に更新
         text: segment.text.trim(),
         timestamp: Math.floor(segment.start),
@@ -194,7 +224,7 @@ export async function POST(request: NextRequest) {
       console.log(`合計 ${segmentsToCreate.length}個のセグメントをデータベースに保存しました`);
     }
 
-    // 9. 会議情報を更新（ステータス、時間）
+    // 11. 会議情報を更新（ステータス、時間）
     // 進捗: 100% - 完了
     await prisma.meeting.update({
       where: { id: meetingId },
@@ -207,13 +237,15 @@ export async function POST(request: NextRequest) {
 
     console.log(`会議 ${meetingId} の文字起こし処理が完了しました`);
 
-    // 10. レスポンス
+    // 12. レスポンス
     return NextResponse.json({
       success: true,
       text: mergedResult.text,
       duration: mergedResult.duration,
       segmentCount: mergedResult.segments?.length || 0,
       language: mergedResult.language,
+    }, {
+      headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
     });
 
   } catch (error) {
@@ -239,7 +271,10 @@ export async function POST(request: NextRequest) {
         error: '文字起こし処理に失敗しました',
         details: error instanceof Error ? error.message : '不明なエラー',
       },
-      { status: 500 }
+      {
+        status: 500,
+        headers: rateLimitResult ? getRateLimitHeaders(rateLimitResult) : {},
+      }
     );
   }
 }

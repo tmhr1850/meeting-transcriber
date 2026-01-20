@@ -22,7 +22,18 @@ describe('mergeTranscriptionResults', () => {
         duration: 10,
         language: 'japanese',
         segments: [
-          { id: 0, start: 0, end: 10, text: '最初の部分。', no_speech_prob: 0.1 },
+          {
+            id: 0,
+            seek: 0,
+            start: 0,
+            end: 10,
+            text: '最初の部分。',
+            tokens: [],
+            temperature: 0.0,
+            avg_logprob: -0.5,
+            compression_ratio: 1.0,
+            no_speech_prob: 0.1,
+          },
         ],
       },
       {
@@ -30,7 +41,18 @@ describe('mergeTranscriptionResults', () => {
         duration: 15,
         language: 'japanese',
         segments: [
-          { id: 0, start: 0, end: 15, text: '次の部分。', no_speech_prob: 0.05 },
+          {
+            id: 0,
+            seek: 0,
+            start: 0,
+            end: 15,
+            text: '次の部分。',
+            tokens: [],
+            temperature: 0.0,
+            avg_logprob: -0.5,
+            compression_ratio: 1.0,
+            no_speech_prob: 0.05,
+          },
         ],
       },
     ];
@@ -54,7 +76,18 @@ describe('mergeTranscriptionResults', () => {
         duration: 10,
         language: 'japanese',
         segments: [
-          { id: 0, start: 0, end: 10, text: '単一の部分。', no_speech_prob: 0.1 },
+          {
+            id: 0,
+            seek: 0,
+            start: 0,
+            end: 10,
+            text: '単一の部分。',
+            tokens: [],
+            temperature: 0.0,
+            avg_logprob: -0.5,
+            compression_ratio: 1.0,
+            no_speech_prob: 0.1,
+          },
         ],
       },
     ];
