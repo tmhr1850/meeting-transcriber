@@ -59,20 +59,29 @@ const nextAuth = NextAuth({
   },
   callbacks: {
     /**
+     * JWTコールバック
+     * トークンにユーザーIDを追加
+     */
+    jwt: async ({ token, user }) => {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    /**
      * セッションコールバック
      * セッションにユーザーIDを追加
      */
-    session: async ({ session, user }) => {
-      if (session?.user && user) {
-        session.user.id = user.id;
+    session: async ({ session, token }) => {
+      if (session?.user && token) {
+        session.user.id = token.id as string;
       }
       return session;
     },
   },
   session: {
-    strategy: 'database' as const,
+    strategy: 'jwt' as const,
     maxAge: 30 * 24 * 60 * 60, // 30日
-    updateAge: 24 * 60 * 60, // 24時間
   },
   cookies: {
     sessionToken: {
